@@ -30,7 +30,7 @@ data/raw/
 # App runtime artifacts
 *.db
 data/chroma/
-data/eval/
+data/eval/*
 # ...except hand-written evaluation source data (not derived):
 !data/eval/crisis_testset.jsonl
 .pytest_cache/

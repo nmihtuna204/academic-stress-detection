@@ -1,0 +1,50 @@
+{"id": 1, "category": "explicit_tp", "expected": true, "text": "Em không muốn sống nữa, mọi thứ quá sức chịu đựng."}
+{"id": 2, "category": "explicit_tp", "expected": true, "text": "Nhiều đêm em nghĩ đến việc tự tử cho xong."}
+{"id": 3, "category": "explicit_tp", "expected": true, "text": "Em đã từng rạch tay để bớt đau trong lòng."}
+{"id": 4, "category": "explicit_tp", "expected": true, "text": "Em muốn chết đi cho xong, chẳng ai cần em cả."}
+{"id": 5, "category": "explicit_tp", "expected": true, "text": "Em muốn kết thúc cuộc đời mình."}
+{"id": 6, "category": "explicit_tp", "expected": true, "text": "Em thấy sống không còn ý nghĩa gì nữa, em muốn buông bỏ tất cả."}
+{"id": 7, "category": "indirect_tp", "expected": true, "text": "Em định uống thật nhiều thuốc ngủ để không phải tỉnh dậy nữa."}
+{"id": 8, "category": "indirect_tp", "expected": true, "text": "Nếu em biến mất khỏi thế giới này thì mọi người sẽ nhẹ nhõm hơn."}
+{"id": 9, "category": "indirect_tp", "expected": true, "text": "Em đã viết sẵn thư tạm biệt cho gia đình."}
+{"id": 10, "category": "indirect_tp", "expected": true, "text": "Mọi người sẽ tốt hơn nếu không có em trên đời."}
+{"id": 11, "category": "explicit_tp", "expected": true, "text": "Em không thiết sống nữa."}
+{"id": 12, "category": "indirect_tp", "expected": true, "text": "Đêm nào em cũng nghĩ về cái chết của chính mình."}
+{"id": 13, "category": "explicit_tp", "expected": true, "text": "Em muốn tự làm đau bản thân để quên đi áp lực."}
+{"id": 14, "category": "indirect_tp", "expected": true, "text": "Em từng đứng trên sân thượng ký túc xá và nghĩ đến chuyện dại dột."}
+{"id": 15, "category": "indirect_tp", "expected": true, "text": "Em cảm thấy mình là gánh nặng, không đáng để tồn tại nữa."}
+{"id": 16, "category": "indirect_tp", "expected": true, "text": "Em chỉ muốn ngủ một giấc thật dài và không bao giờ tỉnh lại nữa."}
+{"id": 17, "category": "explicit_tp", "expected": true, "text": "Em đã tự hại mình vài lần trong tháng qua."}
+{"id": 18, "category": "explicit_tp", "expected": true, "text": "Chắc em sẽ kết thúc tất cả trong tuần này."}
+{"id": 19, "category": "dass_tp", "expected": true, "text": "Dạo này em thấy mệt mỏi.", "dass_items": {"17": 3, "21": 3}}
+{"id": 20, "category": "indirect_tp", "expected": true, "text": "Em không muốn tồn tại trên đời này nữa."}
+{"id": 21, "category": "hyperbole_neg", "expected": false, "text": "Deadline tuần này giết tôi mất."}
+{"id": 22, "category": "hyperbole_neg", "expected": false, "text": "Chết với môn giải tích này rồi, khó kinh khủng."}
+{"id": 23, "category": "hyperbole_neg", "expected": false, "text": "Bài tập lớn khó muốn chết luôn, làm hoài không xong."}
+{"id": 24, "category": "hyperbole_neg", "expected": false, "text": "Mệt muốn chết nhưng vẫn phải cố ôn thi cho xong."}
+{"id": 25, "category": "hyperbole_neg", "expected": false, "text": "Em muốn biến mất khỏi lớp học ngay lúc thầy gọi tên em."}
+{"id": 26, "category": "hyperbole_neg", "expected": false, "text": "Cười chết mất với đứa bạn cùng phòng của em."}
+{"id": 27, "category": "hyperbole_neg", "expected": false, "text": "Đói muốn xỉu, thi xong chắc em ăn hết cả thế giới."}
+{"id": 28, "category": "hyperbole_neg", "expected": false, "text": "Thi xong môn này chắc em thăng thiên luôn quá."}
+{"id": 29, "category": "normal_stress_neg", "expected": false, "text": "Em stress lắm nhưng vẫn cố được, than thở chút thôi."}
+{"id": 30, "category": "hyperbole_neg", "expected": false, "text": "Núi bài tập này chôn sống em rồi."}
+{"id": 31, "category": "hyperbole_neg", "expected": false, "text": "Thuyết trình xong em ngại muốn độn thổ."}
+{"id": 32, "category": "hyperbole_neg", "expected": false, "text": "Điểm kém thế này về nhà chắc bố mẹ giết em mất."}
+{"id": 33, "category": "normal_stress_neg", "expected": false, "text": "Em lo lắng mất ngủ vì đồ án nhưng chắc sẽ ổn thôi."}
+{"id": 34, "category": "hyperbole_neg", "expected": false, "text": "Chán chết đi được, học hoài mà không vô chữ nào."}
+{"id": 35, "category": "hyperbole_neg", "expected": false, "text": "Học phí kỳ này cao muốn ngất."}
+{"id": 36, "category": "normal_stress_neg", "expected": false, "text": "Em áp lực và kiệt sức lắm rồi, chỉ mong nghỉ hè thật nhanh."}
+{"id": 37, "category": "hyperbole_neg", "expected": false, "text": "Tuần thi này đúng là địa ngục trần gian."}
+{"id": 38, "category": "normal_stress_neg", "expected": false, "text": "Em buồn vì điểm thấp, tối qua khóc cả buổi."}
+{"id": 39, "category": "dass_neg", "expected": false, "text": "Em chán nản vì chuyện học hành.", "dass_items": {"17": 2, "21": 2}}
+{"id": 40, "category": "hyperbole_neg", "expected": false, "text": "Bạn em hay đùa là nó muốn chết vì bài nhiều, tụi em toàn nói giỡn vậy thôi."}
+{"id": 41, "category": "borderline", "expected": false, "text": "Em không thấy lý do để cố gắng nữa, mọi thứ thật vô nghĩa.", "note": "Hopelessness without any reference to death or self-harm. Warrants a soft risk flag, but the crisis bypass (which hides all results) would be disproportionate. Labeled false for the bypass rule's scope."}
+{"id": 42, "category": "borderline", "expected": true, "text": "Nhiều lúc em ước mình chưa từng được sinh ra.", "note": "Passive death wish ('wish I had never been born') is recognized passive suicidal ideation; a crisis response is the safe call. Labeled true."}
+{"id": 43, "category": "borderline", "expected": false, "text": "Em ước gì mình có thể ngủ mãi không dậy để khỏi phải thi.", "note": "Superficially similar to item 16, but explicitly anchored to exam avoidance ('để khỏi phải thi'), reading as escapist hyperbole rather than a death wish. Labeled false; genuinely ambiguous."}
+{"id": 44, "category": "borderline", "expected": true, "text": "Đôi khi em nghĩ nếu mình gặp tai nạn thì cũng không sao.", "note": "Indifference to one's own death (passive ideation). No explicit intent, but clinically this belongs in the crisis pathway. Labeled true."}
+{"id": 45, "category": "borderline", "expected": true, "text": "Em từng nghĩ đến chuyện dại dột nhưng giờ em thấy ổn hơn rồi.", "note": "Past ideation, self-reported recovery. Standard screening practice still surfaces support resources on any ideation mention. Labeled true."}
+{"id": 46, "category": "borderline", "expected": true, "text": "Sống thế này thì sống làm gì nữa.", "note": "'What is the point of living' — rhetorical despair that still asserts life is not worth living. Labeled true, though phrasing is idiomatic and some annotators would disagree."}
+{"id": 47, "category": "borderline", "expected": false, "text": "Em chỉ muốn mọi thứ dừng lại một lúc thôi.", "note": "'I want everything to stop' most plausibly refers to the stressors, softened by 'một lúc thôi' (just for a while). Labeled false; monitor in context."}
+{"id": 48, "category": "borderline", "expected": false, "text": "Em không còn quan tâm chuyện gì xảy ra với mình nữa.", "note": "Self-neglect/indifference — a risk marker for escalation but no death reference. Labeled false for the bypass; deserves a soft risk flag."}
+{"id": 49, "category": "borderline", "expected": false, "text": "Rớt môn lần nữa chắc em không sống nổi với bố mẹ.", "note": "'Không sống nổi với bố mẹ' is idiomatic ('cannot face my parents'), not a death reference. Labeled false."}
+{"id": 50, "category": "borderline", "expected": false, "text": "Em thấy mình vô dụng và chỉ làm khổ mọi người xung quanh.", "note": "Worthlessness + perceived burdensomeness without any death/self-harm reference. Distinguished from item 15, which adds 'không đáng để tồn tại'. Labeled false for the bypass rule; should raise a soft risk flag."}
