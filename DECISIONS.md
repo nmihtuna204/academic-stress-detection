@@ -147,3 +147,24 @@ Running log of non-obvious defaults chosen without blocking on the user.
 - Per instructions the rule was NOT modified to fit this set; the set is the
   measurement instrument. The FN list doubles as the roadmap if the rule is
   revised later (any revision must be evaluated on a NEW held-out set).
+
+## Defense-strengthening — Phase 4 (data-collection toolkit)
+
+- **Admin access is CLI-only** (`scripts/export_dataset.py`, `scripts/
+  data_quality_report.py`), not a Streamlit admin page: the participant-facing
+  app must not ship a data-export surface, and the researcher runs on the host
+  where the DB lives anyway.
+- **Export strips demographics** (age/gender/year/major/university) even though
+  they are only quasi-identifying — the eval pipeline doesn't use them, so the
+  analysis CSV carries the minimum: UUID, text, items, derived scores/labels.
+  `data/real/` is inside the gitignored data dirs; real data never enters git.
+- Export takes the LATEST text entry and LATEST scored questionnaire per student
+  (repeat participants contribute one row) and skips students with no scored
+  questionnaire (no ground truth derivable).
+- Quality flags are advisory (straight-lining, <20-word text, <120s completion,
+  DASS/PSS ≥2 unified levels apart); exclusions must be manual and documented.
+  Verified live on the synthetic DB: 201/201 flagged for missing text + instant
+  completion (correct - synthetic rows have neither), plus 2 real mismatch flags.
+- Consent form and participant instructions carry bracketed placeholders for
+  researcher name/contact - to be filled before any real collection; the crisis
+  procedure section mirrors exactly what the app does.
