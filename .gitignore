@@ -1,0 +1,36 @@
+# Environment variables — NEVER commit this
+.env
+
+# Python virtual environment
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# HuggingFace model cache (large files, re-downloads automatically)
+.cache/
+*.bin
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test data / user responses (privacy)
+data/responses/
+data/raw/
+
+# App runtime artifacts
+*.db
+data/chroma/
+data/eval/
+.pytest_cache/
+models/
+*.log
