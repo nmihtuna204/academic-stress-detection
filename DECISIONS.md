@@ -168,3 +168,19 @@ Running log of non-obvious defaults chosen without blocking on the user.
 - Consent form and participant instructions carry bracketed placeholders for
   researcher name/contact - to be filled before any real collection; the crisis
   procedure section mirrors exactly what the app does.
+
+## Defense-strengthening — Phase 5 (human-eval scaffolding)
+
+- Rating sheets contain identical items in per-rater shuffled order (seeded) so
+  raters cannot anchor on each other while `rating_analysis` joins on item_id.
+- `export_for_rating` REFUSES to export the synthetic placeholder explanations
+  ("(synthetic)") — rating sheets may only ever contain real model output, so no
+  human-eval number can accidentally be based on fake explanations.
+- Inter-rater agreement: Krippendorff's alpha implemented in-repo (no extra
+  dependency), interval metric by default (standard for 1–5 scales; ordinal
+  available). Correctness pinned by a hand-computed test case (alpha = 0.85 for
+  units [1,2] and [4,5]) plus edge-case tests. ICC was not added — one agreement
+  coefficient, properly tested, is enough for a pre-thesis.
+- SUS uses the standard Brooke scoring (odd −1 / even 5−x, ×2.5) with the
+  Bangor/Sauro-Lewis grade bands; scorer validated against the 0/50/100
+  anchor patterns.
