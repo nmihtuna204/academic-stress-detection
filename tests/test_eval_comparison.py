@@ -1,8 +1,6 @@
 """Tests for the baseline-comparison pipeline (datasets, baselines, compare)."""
 
 import asyncio
-import json
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -113,7 +111,6 @@ class TestLlmCache:
 class TestLlmFullMocked:
     def test_pipeline_with_mocked_chain(self, tmp_path, monkeypatch):
         """llm_full plumbing works end-to-end with the LLM and NLP mocked."""
-        from app.eval import baselines
         from app.schemas.enums import StressLevel
         from app.schemas.models import LlmAssessment
 

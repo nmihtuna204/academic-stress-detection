@@ -184,3 +184,23 @@ Running log of non-obvious defaults chosen without blocking on the user.
 - SUS uses the standard Brooke scoring (odd −1 / even 5−x, ×2.5) with the
   Bangor/Sauro-Lewis grade bands; scorer validated against the 0/50/100
   anchor patterns.
+
+## Defense-strengthening — Phase 6 (cleanup & polish)
+
+- **Removed the `wonrax` sentiment model entirely.** Its only unique output was
+  a polarity label, which is now derived from the PhoBERT stress prediction +
+  lexicon (High → negative; Moderate + keyword → negative; else neutral). The
+  NLP stack is now fully offline; the sole runtime hub dependency (and the
+  observed multi-minute download hang) is gone. Trade-off accepted: the derived
+  polarity cannot detect positive sentiment — "neutral" is the honest floor.
+  Verified live: warmup {'phobert_stress': True}; stressed text → negative,
+  calm text → neutral.
+- **CI** (`.github/workflows/ci.yml`): ruff + pytest on Ubuntu/Python 3.11 with
+  CPU torch; tests needing model downloads are marked `requires_network` and
+  deselected, `HF_HUB_OFFLINE=1` hard-blocks accidental downloads, and all LLM
+  tests are mocked so no API key exists in CI.
+- Ruff adopted with E501 ignored (long Vietnamese string literals) and
+  `research/` excluded (frozen pre-existing scripts, not style-churned).
+- `docs/RESULTS.md` holds only computed numbers; pending results are marked
+  "NOT RUN" rather than projected. The simulated-agreement pipeline self-check
+  (acc 0.775) is quarantined in an appendix with an explicit do-not-cite note.

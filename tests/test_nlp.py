@@ -72,7 +72,6 @@ class TestAnalyzeLexiconFallback:
         from app.nlp import emotion as emotion_module
 
         monkeypatch.setattr(emotion_module, "_load_stress_classifier", lambda: None)
-        monkeypatch.setattr(emotion_module, "_load_sentiment_model", lambda: None)
 
     def test_stressful_text(self):
         result = analyze("Em quá tải và kiệt sức, đêm nào cũng mất ngủ vì lo lắng chuyện thi cử.")
@@ -96,29 +95,43 @@ class TestAnalyzeLexiconFallback:
 
 
 class TestAnalyzeWithMockedModels:
+    def make_stress_clf(self, low, moderate, high):
+        def fake_stress_clf(text):
+            return [[
+                {"label": "LABEL_0", "score": low},
+                {"label": "LABEL_1", "score": moderate},
+                {"label": "LABEL_2", "score": high},
+            ]]
+
+        return fake_stress_clf
+
     def test_stress_classifier_output_used(self, monkeypatch):
         from app.nlp import emotion as emotion_module
 
-        def fake_stress_clf(text):
-            return [[
-                {"label": "LABEL_0", "score": 0.1},
-                {"label": "LABEL_1", "score": 0.2},
-                {"label": "LABEL_2", "score": 0.7},
-            ]]
-
-        def fake_sentiment_clf(text):
-            return [[
-                {"label": "NEG", "score": 0.8},
-                {"label": "NEU", "score": 0.15},
-                {"label": "POS", "score": 0.05},
-            ]]
-
-        monkeypatch.setattr(emotion_module, "_load_stress_classifier", lambda: fake_stress_clf)
-        monkeypatch.setattr(emotion_module, "_load_sentiment_model", lambda: fake_sentiment_clf)
-
+        monkeypatch.setattr(
+            emotion_module, "_load_stress_classifier",
+            lambda: self.make_stress_clf(0.1, 0.2, 0.7),
+        )
         result = analyze("Em áp lực lắm.")
         assert result.model_stress_level == "High"
         assert result.emotion_label == "stress_high"
         assert result.sentiment_polarity == SentimentPolarity.NEGATIVE
         assert result.emotion_scores["stress_high"] == 0.7
-        assert result.emotion_scores["sentiment_neg"] == 0.8
+
+    def test_polarity_derived_from_stress_and_lexicon(self, monkeypatch):
+        from app.nlp import emotion as emotion_module
+
+        # Moderate stress + a stress keyword -> negative.
+        monkeypatch.setattr(
+            emotion_module, "_load_stress_classifier",
+            lambda: self.make_stress_clf(0.2, 0.7, 0.1),
+        )
+        assert analyze("Em áp lực lắm.").sentiment_polarity == SentimentPolarity.NEGATIVE
+        # Moderate stress, no keywords -> neutral.
+        assert analyze("Tuần này bình thường thôi.").sentiment_polarity == SentimentPolarity.NEUTRAL
+        # Low stress -> neutral even with a keyword present.
+        monkeypatch.setattr(
+            emotion_module, "_load_stress_classifier",
+            lambda: self.make_stress_clf(0.8, 0.1, 0.1),
+        )
+        assert analyze("Hơi lo lắng nhưng ổn.").sentiment_polarity == SentimentPolarity.NEUTRAL

@@ -1,14 +1,17 @@
-"""Vietnamese emotion/sentiment analysis for free-text stress input.
+"""Vietnamese emotion analysis for free-text stress input.
 
 Model strategy (each layer degrades gracefully if unavailable):
 1. Local fine-tuned PhoBERT stress classifier (`models/phobert-stress`,
-   3-class Low/Moderate/High) - the primary stress signal.
-2. `wonrax/phobert-base-vietnamese-sentiment` for sentiment polarity
-   (POS/NEG/NEU), downloaded from the HuggingFace hub.
-3. Lexicon-only analysis (always available, offline).
+   3-class Low/Moderate/High) - the primary signal. Fully offline.
+2. Lexicon-only analysis (always available, offline).
 
-Models are loaded lazily and cached, so the first request pays the load cost
-once per process.
+Sentiment polarity is DERIVED from the stress prediction and the keyword
+lexicon rather than a separate sentiment model: a dedicated hub-downloaded
+sentiment model added no signal the stress classifier doesn't already carry,
+plus a network dependency (see DECISIONS.md, defense-strengthening Phase 6).
+
+The model is loaded lazily and cached, so the first request pays the load
+cost once per process.
 """
 
 from __future__ import annotations
@@ -75,27 +78,6 @@ def _load_stress_classifier():
         return None
 
 
-@lru_cache(maxsize=1)
-def _load_sentiment_model():
-    """Load the Vietnamese sentiment model from the HF hub, or None."""
-    settings = get_settings()
-    try:
-        from transformers import pipeline
-
-        clf = pipeline(
-            task="text-classification",
-            model=settings.hf_sentiment_model,
-            top_k=None,
-            truncation=True,
-            max_length=256,
-        )
-        logger.info("Loaded sentiment model %s", settings.hf_sentiment_model)
-        return clf
-    except Exception as exc:  # offline, model renamed, ...
-        logger.warning("Sentiment model %s unavailable: %s", settings.hf_sentiment_model, exc)
-        return None
-
-
 def _map_phobert_label(raw_label: str) -> str:
     """Map a raw classifier label (possibly LABEL_i) to a stress-level name."""
     if raw_label.upper().startswith("LABEL_"):
@@ -106,21 +88,21 @@ def _map_phobert_label(raw_label: str) -> str:
     return raw_label
 
 
-_SENTIMENT_MAP = {
-    "POS": SentimentPolarity.POSITIVE,
-    "NEG": SentimentPolarity.NEGATIVE,
-    "NEU": SentimentPolarity.NEUTRAL,
-    "POSITIVE": SentimentPolarity.POSITIVE,
-    "NEGATIVE": SentimentPolarity.NEGATIVE,
-    "NEUTRAL": SentimentPolarity.NEUTRAL,
-}
+def _derive_polarity(
+    model_stress_level: StressLevel | None, keyword_count: int
+) -> SentimentPolarity:
+    """Polarity from the stress prediction and lexicon (no sentiment model).
 
-
-def _lexicon_fallback_polarity(keyword_count: int) -> SentimentPolarity:
-    if keyword_count >= 2:
+    High stress reads as negative; Moderate is negative only when the lexicon
+    corroborates; everything else is neutral (the pipeline has no positive
+    signal to detect, and neutral is the honest default).
+    """
+    if model_stress_level == StressLevel.HIGH:
         return SentimentPolarity.NEGATIVE
-    if keyword_count == 1:
-        return SentimentPolarity.NEUTRAL
+    if model_stress_level == StressLevel.MODERATE and keyword_count >= 1:
+        return SentimentPolarity.NEGATIVE
+    if model_stress_level is None and keyword_count >= 2:
+        return SentimentPolarity.NEGATIVE
     return SentimentPolarity.NEUTRAL
 
 
@@ -142,7 +124,6 @@ def analyze(text: str) -> EmotionResult:
 
     emotion_scores: dict[str, float] = {}
     model_stress_level: StressLevel | None = None
-    sentiment = None
 
     stress_clf = _load_stress_classifier()
     if stress_clf is not None:
@@ -158,19 +139,7 @@ def analyze(text: str) -> EmotionResult:
         except Exception as exc:
             logger.warning("PhoBERT stress inference failed: %s", exc)
 
-    sentiment_clf = _load_sentiment_model()
-    if sentiment_clf is not None:
-        try:
-            predictions = sentiment_clf(text)[0]
-            for p in predictions:
-                emotion_scores[f"sentiment_{p['label'].lower()}"] = round(float(p["score"]), 4)
-            top_label = max(predictions, key=lambda p: p["score"])["label"]
-            sentiment = _SENTIMENT_MAP.get(top_label.upper())
-        except Exception as exc:
-            logger.warning("Sentiment inference failed: %s", exc)
-
-    if sentiment is None:
-        sentiment = _lexicon_fallback_polarity(len(keywords))
+    sentiment = _derive_polarity(model_stress_level, len(keywords))
 
     if model_stress_level is not None:
         emotion_label = f"stress_{model_stress_level.value.lower()}"
@@ -193,7 +162,4 @@ def analyze(text: str) -> EmotionResult:
 
 def warmup() -> dict[str, bool]:
     """Eagerly load models (called at API startup); report availability."""
-    return {
-        "phobert_stress": _load_stress_classifier() is not None,
-        "sentiment": _load_sentiment_model() is not None,
-    }
+    return {"phobert_stress": _load_stress_classifier() is not None}

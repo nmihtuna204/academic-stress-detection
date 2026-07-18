@@ -48,7 +48,6 @@ app = FastAPI(
 @app.get("/health")
 async def health() -> dict:
     """Liveness probe with model/knowledge availability details."""
-    from app.rag.retriever import retrieve  # local import: cheap when unused
 
     try:
         from app.rag.store import get_collection

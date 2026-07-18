@@ -1,7 +1,6 @@
 """Tests for the ablation study (LLM mocked; no network)."""
 
 import pandas as pd
-import pytest
 
 from app.eval.ablation import CONFIGS, interpret, plot, run
 

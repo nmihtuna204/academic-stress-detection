@@ -25,17 +25,18 @@ Streamlit UI (Vietnamese, multipage)          FastAPI backend
         ┌───────────────┬───────────────┬───────────┼───────────────┐
         ▼               ▼               ▼           ▼               ▼
   Crisis rule     Scoring engines   NLP (PhoBERT   ChromaDB RAG   LangChain +
-  (deterministic, (DASS-21/PSS-10,  stress + VN    (Vietnamese    OpenAI
-  runs first)     ground truth)     sentiment +    knowledge      (structured
+  (deterministic, (DASS-21/PSS-10,  stress clf +   (Vietnamese    OpenAI
+  runs first)     ground truth)     VN stress      knowledge      (structured
                                     lexicon)       base)          JSON output)
                                         └──────── SQLite via SQLAlchemy ───────┘
 ```
 
 The pipeline for `POST /assess/full`:
 
-1. **NLP** — fine-tuned local PhoBERT stress classifier + Vietnamese sentiment
-   model + a ~90-term Vietnamese stress-keyword lexicon (each layer degrades
-   gracefully if a model is unavailable).
+1. **NLP** — fine-tuned local PhoBERT stress classifier + a ~90-term Vietnamese
+   stress-keyword lexicon; sentiment polarity is derived from these two signals
+   (no separate sentiment model, fully offline; degrades to lexicon-only if the
+   classifier is unavailable).
 2. **Deterministic scoring** — official DASS-21 and PSS-10 scoring rules produce
    the ground-truth label (`Low/Moderate/High/Severe`).
 3. **Crisis rule** — runs *before* any LLM call; on self-harm signals the flow
@@ -59,8 +60,7 @@ cp .env.example .env          # then set OPENAI_API_KEY
 
 Optional but recommended — the local fine-tuned PhoBERT stress classifier is
 expected at `models/phobert-stress` (see `research/phobert_finetune.py` to
-reproduce it). Without it the app falls back to the HF sentiment model and the
-keyword lexicon.
+reproduce it). Without it the app degrades to lexicon-only text analysis.
 
 ### Seed the knowledge base and synthetic data
 
@@ -108,13 +108,56 @@ python -m app.eval.evaluate               # accuracy, macro-F1, Cohen's kappa
 Writes `data/eval/metrics.json` and `data/eval/confusion_matrix.png` comparing
 `llm_predicted_label` against the questionnaire-derived `ground_truth_label`.
 
+## Reproducing the experiments
+
+All experiment artifacts land in `data/eval/`; computed tables are collected in
+[docs/RESULTS.md](docs/RESULTS.md). Numbers based on synthetic data are labeled
+as such in every output. Commands, in the order a fresh clone would run them:
+
+```bash
+# 0. One-time setup
+pip install -r requirements.txt
+cp .env.example .env               # set OPENAI_API_KEY for the LLM systems
+python scripts/seed.py --rows 200  # ChromaDB ingestion + synthetic DB rows
+
+# 1. Baseline comparison (tfidf_lr, phobert_ft, llm_zeroshot, llm_full)
+#    Same frozen stratified split for every system; LLM responses are cached
+#    under data/eval/llm_cache/ so re-runs are free and deterministic.
+python -m app.eval.compare --dataset synthetic
+#    -> data/eval/comparison.csv, comparison.md, confusion_<system>.png
+#    LLM systems are skipped with an explicit note if no valid key is set.
+
+# 2. Ablation study (full / no_rag / no_questionnaire / no_emotion / text_only)
+python -m app.eval.ablation --dataset synthetic
+#    -> data/eval/ablation.csv, ablation.md, ablation.png   (requires API key)
+
+# 3. Crisis-rule evaluation (50 hand-labeled Vietnamese items; offline)
+python -m app.eval.crisis_eval
+#    -> data/eval/crisis_eval.md  (precision/recall/F1 + every FP/FN verbatim)
+
+# 4. Real-data study, once participants have used the app
+python scripts/export_dataset.py --split      # SQLite -> data/real/dataset.csv
+python scripts/data_quality_report.py         # flag suspect submissions
+python -m app.eval.compare --dataset real     # identical pipeline, real data
+
+# 5. Human evaluation
+python -m app.eval.export_for_rating --n 30 --raters 3   # blank rating sheets
+python -m app.eval.rating_analysis --dir data/eval/rating # after sheets return
+python -m app.eval.sus_score --csv <sus_responses.csv>    # SUS usability score
+```
+
+Determinism notes: every script takes `--seed` (default 42) where randomness
+exists; the train/test split is frozen in `data/stress_dataset_split.csv`
+(reused so PhoBERT's fine-tuning train set never leaks into test); LLM calls
+run at temperature 0 for `llm_zeroshot` and are disk-cached for all systems.
+
 ## Repository layout
 
 ```
 app/
   config.py         pydantic-settings configuration (.env)
   scoring/          DASS-21 & PSS-10 engines + unified ground-truth label
-  nlp/              emotion.py (PhoBERT + sentiment), lexicon.py (VN keywords)
+  nlp/              emotion.py (PhoBERT stress clf), lexicon.py (VN keywords)
   rag/              ChromaDB store, Markdown ingestion, retriever
   llm/              chain.py (LangChain + Pydantic parser), safety.py (crisis rule)
   api/              FastAPI app (main.py) + orchestration (services.py)

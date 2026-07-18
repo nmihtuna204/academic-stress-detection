@@ -47,7 +47,10 @@ class TestChunking:
         assert "03_nguon_ho_tro_vietnam.md" in sources
 
 
+@pytest.mark.requires_network
 class TestIngestAndRetrieve:
+    """Exercises real ChromaDB + embeddings; downloads a model on cold cache."""
+
     def test_ingest_then_retrieve(self, tmp_chroma):
         from app.rag.retriever import retrieve
 

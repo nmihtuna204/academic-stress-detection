@@ -1,7 +1,7 @@
 """Tests for the real-data collection toolkit (export + quality report)."""
 
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest

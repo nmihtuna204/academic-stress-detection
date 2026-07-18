@@ -38,8 +38,6 @@ class Settings(BaseSettings):
     # --- NLP models ---
     # Local fine-tuned PhoBERT stress classifier (preferred if present).
     phobert_stress_model_dir: str = str(PROJECT_ROOT / "models" / "phobert-stress")
-    # HuggingFace fallback sentiment model for Vietnamese.
-    hf_sentiment_model: str = "wonrax/phobert-base-vietnamese-sentiment"
 
     # --- API ---
     api_host: str = "127.0.0.1"

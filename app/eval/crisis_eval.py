@@ -120,8 +120,8 @@ def format_report(results: dict) -> str:
         f"Test set: {results['n']} hand-written Vietnamese items "
         f"(TP={results['tp']} FP={results['fp']} FN={results['fn']} TN={results['tn']})",
         "",
-        f"| metric | value |",
-        f"|---|---|",
+        "| metric | value |",
+        "|---|---|",
         f"| precision | {results['precision']:.3f} |",
         f"| recall | {results['recall']:.3f} |",
         f"| F1 | {results['f1']:.3f} |",

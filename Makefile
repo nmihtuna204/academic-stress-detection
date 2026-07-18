@@ -1,6 +1,6 @@
 # Convenience targets (POSIX make; on Windows use the underlying commands or Git Bash).
 
-.PHONY: install seed test api ui eval docker-up docker-down
+.PHONY: install seed test api ui eval compare ablation crisis-eval export lint docker-up docker-down
 
 install:
 	pip install -r requirements.txt
@@ -19,6 +19,22 @@ ui:
 
 eval:
 	python -m app.eval.evaluate
+
+compare:
+	python -m app.eval.compare --dataset synthetic
+
+ablation:
+	python -m app.eval.ablation --dataset synthetic
+
+crisis-eval:
+	python -m app.eval.crisis_eval
+
+export:
+	python scripts/export_dataset.py --split
+	python scripts/data_quality_report.py
+
+lint:
+	python -m ruff check app/ scripts/ streamlit_app/ tests/
 
 docker-up:
 	docker compose up --build

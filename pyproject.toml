@@ -4,6 +4,14 @@ asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+markers = [
+    "requires_network: needs internet (model downloads); skipped in CI",
+]
 
 [tool.ruff]
 line-length = 110
+extend-exclude = ["research"]
+
+[tool.ruff.lint]
+# E501: long lines occur in Vietnamese string content; line-length is advisory there.
+ignore = ["E501"]
