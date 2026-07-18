@@ -114,3 +114,15 @@ Running log of non-obvious defaults chosen without blocking on the user.
   honest text-only comparison point.
 - LLM eval calls default to `HF_HUB_OFFLINE=1` (local/cached HF models only) so a
   slow hub connection cannot hang an evaluation; `--online-hub` opts out.
+
+## Defense-strengthening — Phase 2 (ablation)
+
+- The ablation reuses the exact `run_llm_full` engine from the baseline
+  comparison with three feature switches (RAG / questionnaire / emotion), so an
+  ablation config and the headline system can never drift apart.
+- The interpretation paragraph in `data/eval/ablation.md` is **generated from the
+  computed deltas**, never hand-written, and always restates the questionnaire
+  label-leakage caveat (the `no_questionnaire` delta measures leakage as much as
+  feature value).
+- With no valid OpenAI key the runner writes an explicit "NOT RUN" marker file
+  instead of empty or invented tables.

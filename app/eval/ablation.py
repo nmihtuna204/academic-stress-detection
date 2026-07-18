@@ -1,0 +1,181 @@
+"""Ablation study over the proposed system's components.
+
+Configurations (same frozen split and metrics as the baseline comparison):
+
+| id               | RAG | questionnaire | emotion |
+|------------------|-----|---------------|---------|
+| full             | on  | on            | on      |
+| no_rag           | off | on            | on      |
+| no_questionnaire | on  | off           | on      |
+| no_emotion       | on  | on            | off     |
+| text_only        | off | off           | off     |
+
+Usage:
+    python -m app.eval.ablation --dataset synthetic
+
+Outputs (data/eval/): ablation.csv, ablation.md, ablation.png.
+All configurations require a valid OPENAI_API_KEY; responses are disk-cached,
+so a full re-run after the first costs nothing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import os
+from pathlib import Path
+
+import pandas as pd
+
+from app.config import PROJECT_ROOT
+
+logger = logging.getLogger(__name__)
+
+# id -> (use_rag, use_questionnaire, use_emotion)
+CONFIGS: dict[str, tuple[bool, bool, bool]] = {
+    "full": (True, True, True),
+    "no_rag": (False, True, True),
+    "no_questionnaire": (True, False, True),
+    "no_emotion": (True, True, False),
+    "text_only": (False, False, False),
+}
+
+METRIC_COLS = ["accuracy", "macro_f1", "cohen_kappa"]
+
+
+def interpret(table: pd.DataFrame) -> str:
+    """One short computed paragraph: which components matter, per the deltas."""
+    if table.empty or "full" not in set(table["config"]):
+        return (
+            "No interpretation available: the ablation has not produced results yet "
+            "(a valid OPENAI_API_KEY is required)."
+        )
+    full_row = table[table["config"] == "full"].iloc[0]
+    parts: list[str] = []
+    for _, row in table[table["config"] != "full"].iterrows():
+        delta = row["macro_f1"] - full_row["macro_f1"]
+        component = {
+            "no_rag": "RAG retrieval",
+            "no_questionnaire": "the questionnaire scores",
+            "no_emotion": "the emotion features",
+            "text_only": "everything except the raw text",
+        }.get(row["config"], row["config"])
+        direction = "drops" if delta < 0 else ("is unchanged" if delta == 0 else "IMPROVES")
+        parts.append(
+            f"removing {component} {direction} macro-F1 by {abs(delta):.3f} "
+            f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f})"
+        )
+    return (
+        "Interpretation (computed from the table above): " + "; ".join(parts) + ". "
+        "Components whose removal barely moves macro-F1 contribute little measurable "
+        "signal on this dataset; large drops mark load-bearing components. Note that "
+        "the questionnaire scores define the ground-truth label, so the "
+        "no_questionnaire delta measures label leakage as much as feature value."
+    )
+
+
+def plot(table: pd.DataFrame, out_path: Path) -> None:
+    """Grouped bar chart: accuracy and macro-F1 per configuration."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    configs = table["config"].tolist()
+    x = np.arange(len(configs))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    bars1 = ax.bar(x - width / 2, table["accuracy"], width, label="Accuracy", color="#5c7cfa")
+    bars2 = ax.bar(x + width / 2, table["macro_f1"], width, label="Macro-F1", color="#20c997")
+    for bars in (bars1, bars2):
+        ax.bar_label(bars, fmt="%.3f", fontsize=9)
+
+    ax.set_xticks(x, configs)
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("score")
+    ax.set_title("Ablation study — proposed system components")
+    ax.legend(frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def run(dataset_name: str, configs: list[str], out_dir: Path | None = None) -> pd.DataFrame:
+    from app.eval.baselines import run_llm_full
+    from app.eval.compare import _openai_key_available, metrics_row
+    from app.eval.datasets import load_eval_dataset
+
+    out = out_dir or (PROJECT_ROOT / "data" / "eval")
+    out.mkdir(parents=True, exist_ok=True)
+
+    if not _openai_key_available():
+        message = (
+            "# Ablation study\n\nNOT RUN: OPENAI_API_KEY is missing or a placeholder. "
+            "Set it in .env and run `python -m app.eval.ablation --dataset "
+            f"{dataset_name}`.\n"
+        )
+        (out / "ablation.md").write_text(message, encoding="utf-8")
+        print(message)
+        return pd.DataFrame()
+
+    df = load_eval_dataset(dataset_name, out_dir=out)
+    rows = []
+    for config in configs:
+        use_rag, use_questionnaire, use_emotion = CONFIGS[config]
+        print(f"\n=== Ablation config: {config} ===")
+        result = asyncio.run(
+            run_llm_full(
+                df,
+                use_rag=use_rag,
+                use_questionnaire=use_questionnaire,
+                use_emotion=use_emotion,
+                system_id=config,
+            )
+        )
+        row, _metrics = metrics_row(result)
+        row["config"] = config
+        rows.append(row)
+        print(f"{config}: acc={row['accuracy']:.3f} macro_f1={row['macro_f1']:.3f}")
+
+    table = pd.DataFrame(rows)
+    # Deltas vs the full configuration.
+    if "full" in set(table["config"]):
+        full_row = table[table["config"] == "full"].iloc[0]
+        for metric in METRIC_COLS:
+            table[f"delta_{metric}"] = (table[metric] - full_row[metric]).round(4)
+
+    display_cols = ["config"] + METRIC_COLS + [f"delta_{m}" for m in METRIC_COLS if f"delta_{m}" in table]
+    table = table[display_cols + [c for c in table.columns if c not in display_cols]]
+    table.to_csv(out / "ablation.csv", index=False)
+
+    banner = (
+        f"# Ablation study — dataset: `{dataset_name}`\n\n"
+        + ("> **Computed on SYNTHETIC data.**\n\n" if dataset_name == "synthetic" else "")
+    )
+    markdown = banner + table[display_cols].to_markdown(index=False) + "\n\n" + interpret(table) + "\n"
+    (out / "ablation.md").write_text(markdown, encoding="utf-8")
+    plot(table, out / "ablation.png")
+    print("\n" + markdown)
+    return table
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dataset", choices=["synthetic", "real"], default="synthetic")
+    parser.add_argument("--configs", nargs="+", choices=list(CONFIGS), default=list(CONFIGS))
+    parser.add_argument("--out", default=None)
+    parser.add_argument("--online-hub", action="store_true")
+    args = parser.parse_args()
+
+    if not args.online_hub:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    logging.basicConfig(level=logging.WARNING)
+    run(args.dataset, args.configs, Path(args.out) if args.out else None)
+
+
+if __name__ == "__main__":
+    main()
