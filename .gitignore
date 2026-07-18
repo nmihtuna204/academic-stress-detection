@@ -31,6 +31,8 @@ data/raw/
 *.db
 data/chroma/
 data/eval/
+# ...except hand-written evaluation source data (not derived):
+!data/eval/crisis_testset.jsonl
 .pytest_cache/
 models/
 *.log

@@ -126,3 +126,24 @@ Running log of non-obvious defaults chosen without blocking on the user.
   feature value).
 - With no valid OpenAI key the runner writes an explicit "NOT RUN" marker file
   instead of empty or invented tables.
+
+## Defense-strengthening — Phase 3 (crisis-rule evaluation)
+
+- Built a 50-item hand-labeled Vietnamese test set (`data/eval/crisis_testset.jsonl`,
+  explicitly un-gitignored — it is source data): 20 true positives (explicit +
+  indirect ideation), 20 hard negatives (hyperbole like "mệt muốn chết", reported
+  speech), 10 borderline items each carrying the annotation rationale in a `note`.
+  Borderline labeling policy: passive death wish / ideation mention → true;
+  hopelessness or burdensomeness without any death reference → false for the
+  *bypass* rule (they deserve a soft risk flag, not result suppression).
+- **Measured (not tuned): precision 0.800, recall 0.500, F1 0.615.**
+  Remaining failure modes, reported as they landed:
+  - The substring rule fires on "muốn chết" inside hyperbole/reported speech
+    (3 FP: items 23, 24, 40) — no negation/context handling.
+  - Indirect ideation is almost entirely missed (8/9 indirect_tp are FN):
+    means-referencing plans ("uống thật nhiều thuốc ngủ"), farewell-letter
+    references, burdensomeness with a death reference, passive ideation.
+    Explicit phrasing is caught 10/10; the DASS-item triggers behave as designed.
+- Per instructions the rule was NOT modified to fit this set; the set is the
+  measurement instrument. The FN list doubles as the roadmap if the rule is
+  revised later (any revision must be evaluated on a NEW held-out set).
