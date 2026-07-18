@@ -86,3 +86,31 @@ Running log of non-obvious defaults chosen without blocking on the user.
 - Docker image installs CPU-only torch to keep size manageable; one shared image
   for API and UI services; models/ mounted read-only (not baked into the image).
 - `models/`, DB, Chroma dir, and eval artifacts are gitignored (large/derived).
+
+## Defense-strengthening — Phase 1 (baseline comparison)
+
+- **The train/val/test split is reused from `research/baseline.py`** (frozen in
+  `data/stress_dataset_split.csv`, seed 42, stratified) instead of being redrawn:
+  `models/phobert-stress` was fine-tuned on that split's train portion, so any new
+  split would leak fine-tuning data into the test set and inflate `phobert_ft`.
+  The stratification was done on the original 3-class label; the derived 4-class
+  distribution over the 70-row test set is Low 16 / Moderate 23 / High 22 /
+  Severe 9 (computed; the exact dataframe is written to
+  `data/eval/dataset_synthetic.csv` on every run).
+- **PhoBERT 3→4 class mapping is the identity** on {Low, Moderate, High}; the
+  model simply cannot predict Severe (F1_severe = 0 by construction). Any
+  score-threshold remapping to synthesize a Severe class would be arbitrary, so
+  the limitation is reported instead of patched.
+- **Honest result (synthetic data)**: `tfidf_lr` (acc 0.686, macro-F1 0.682)
+  currently BEATS `phobert_ft` (acc 0.657, macro-F1 0.533) on the 4-class task,
+  chiefly because of the missing Severe class. The LLM systems have not produced
+  numbers yet: the configured `OPENAI_API_KEY` is the placeholder value, and no
+  metric is written down that was not actually computed. Once a key is set,
+  `python -m app.eval.compare --dataset synthetic` fills in both LLM rows from
+  the same frozen split (responses disk-cached under `data/eval/llm_cache/`).
+- **Known validity caveat, stated wherever results appear**: `llm_full` receives
+  the DASS/PSS scores from which the ground-truth label is derived, so its
+  agreement is partly by construction. The `no_questionnaire` ablation is the
+  honest text-only comparison point.
+- LLM eval calls default to `HF_HUB_OFFLINE=1` (local/cached HF models only) so a
+  slow hub connection cannot hang an evaluation; `--online-hub` opts out.
