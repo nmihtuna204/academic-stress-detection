@@ -5,7 +5,6 @@ trend line plus a timeline, so a student can see movement rather than rows.
 """
 
 import streamlit as st
-
 from ui.charts import trend_chart
 from ui.components import (
     app_footer,

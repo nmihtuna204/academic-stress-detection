@@ -6,7 +6,6 @@ import os
 
 import httpx
 import streamlit as st
-
 from ui import tokens as T
 from ui.icons import icon
 

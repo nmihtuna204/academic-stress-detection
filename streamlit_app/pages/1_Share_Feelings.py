@@ -6,7 +6,6 @@ text is ever saved or sent — the mood itself is not part of the payload.
 """
 
 import streamlit as st
-
 from ui.components import (
     app_footer,
     callout,

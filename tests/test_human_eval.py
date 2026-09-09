@@ -33,7 +33,7 @@ class TestExportForRating:
 
     def test_refuses_synthetic_placeholders(self, tmp_db):
         self.seed_predictions(n=5, explanation="(synthetic")  # only near-placeholder
-        from app.db import get_session, Prediction
+        from app.db import Prediction, get_session
 
         session = next(get_session())
         try:

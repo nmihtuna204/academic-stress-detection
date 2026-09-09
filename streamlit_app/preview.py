@@ -10,7 +10,6 @@ Sample data only. No API calls, no session state, no scoring.
 """
 
 import streamlit as st
-
 from ui.charts import dass_bar_chart, gauge_chart, radar_chart, trend_chart
 from ui.components import (
     callout,

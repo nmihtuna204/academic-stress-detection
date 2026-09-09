@@ -17,10 +17,10 @@ import re
 from contextlib import contextmanager
 
 import streamlit as st
+from utils import DISCLAIMER
 
 from ui import tokens as T
 from ui.icons import icon
-from utils import DISCLAIMER
 
 _CALLOUT_ICON = {
     "info": "info",

@@ -5,7 +5,6 @@ presentation is. Nothing here calls the API.
 """
 
 import streamlit as st
-
 from ui.components import (
     app_footer,
     callout,

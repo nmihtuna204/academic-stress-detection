@@ -226,9 +226,8 @@ class TestEvalUsesProductionRetrieval:
 
     def test_full_pipeline_retrieves_with_the_production_query(self, tmp_path, monkeypatch):
         from app.api.services import build_rag_query
-        from app.schemas.enums import Language, SentimentPolarity
+        from app.schemas.enums import Language, SentimentPolarity, StressLevel
         from app.schemas.models import EmotionResult, LlmAssessment
-        from app.schemas.enums import StressLevel
 
         emotion = EmotionResult(
             emotion_label="negative",

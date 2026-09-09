@@ -7,7 +7,6 @@ from app.rag.retriever import RetrievedDoc
 from app.schemas.enums import Language, SentimentPolarity, StressLevel
 from app.schemas.models import EmotionResult, LlmAssessment
 
-
 FAKE_EMOTION = EmotionResult(
     emotion_label="stress_high",
     emotion_scores={"stress_high": 0.8},

@@ -7,12 +7,12 @@ for Vietnamese free text. Both sides are covered here on purpose.
 
 import pytest
 
+from app.nlp.emotion import _map_phobert_label, analyze, detect_language
 from app.nlp.lexicon import (
     ALL_KEYWORDS,
     find_crisis_keywords,
     find_stress_keywords,
 )
-from app.nlp.emotion import analyze, detect_language, _map_phobert_label
 from app.schemas.enums import Language, SentimentPolarity
 
 

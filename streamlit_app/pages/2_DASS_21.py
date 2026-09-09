@@ -12,8 +12,6 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from app.scoring.dass21 import ANSWER_CHOICES, DASS21_QUESTIONS  # noqa: E402
-
 from ui.components import (  # noqa: E402
     app_footer,
     callout,
@@ -25,6 +23,8 @@ from ui.components import (  # noqa: E402
 from ui.nav import render_sidebar  # noqa: E402
 from ui.theme import configure_page  # noqa: E402
 from utils import require_consent  # noqa: E402
+
+from app.scoring.dass21 import ANSWER_CHOICES, DASS21_QUESTIONS  # noqa: E402
 
 configure_page("DASS-21", "📋")
 require_consent()

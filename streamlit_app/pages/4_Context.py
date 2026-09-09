@@ -4,7 +4,6 @@ Fields and the saved payload are unchanged — presentation only.
 """
 
 import streamlit as st
-
 from ui.components import (
     app_footer,
     callout,

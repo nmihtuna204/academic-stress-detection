@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import __version__
+from app.api import services
 from app.db.database import get_session, init_db
 from app.db.models import Prediction, QuestionnaireResponse, TextEntry, User
 from app.llm.safety import check_crisis
@@ -20,7 +21,6 @@ from app.schemas.models import (
     QuestionnaireRequest,
     TextEntryIn,
 )
-from app.api import services
 
 logger = logging.getLogger(__name__)
 

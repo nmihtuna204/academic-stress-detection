@@ -261,7 +261,6 @@ class TestEvaluateWiring:
     def test_evaluate_uses_the_retriever_and_breaks_down_by_style(self, monkeypatch):
         """End-to-end shape check with retrieval stubbed, so it runs offline."""
         from app.eval import retrieval_eval
-
         from app.rag.retriever import RetrievedDoc
 
         monkeypatch.setattr(

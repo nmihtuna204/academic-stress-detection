@@ -9,7 +9,6 @@ The payload and the /assess/full call are unchanged.
 """
 
 import streamlit as st
-
 from ui.charts import dass_bar_chart, gauge_chart, radar_chart, trend_chart
 from ui.components import (
     app_footer,
