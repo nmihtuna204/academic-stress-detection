@@ -23,7 +23,6 @@ from app.eval.datasets import (
     pss_answers_from_row,
 )
 
-
 # Passed wherever `assess` is mocked. Without it run_llm_full builds a real
 # ChatOpenAI, which raises "Missing credentials" on any machine without a key -
 # so these tests passed locally only because the developer's .env held one, and
