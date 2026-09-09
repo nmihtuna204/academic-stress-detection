@@ -4,8 +4,16 @@ Consent is required before any data entry — the rule is unchanged; only its
 presentation is. Nothing here calls the API.
 """
 
+import sys
+from pathlib import Path
+
 import streamlit as st
-from ui.components import (
+
+# Streamlit puts `streamlit_app/` on sys.path, not the project root, so the
+# `app` package is unreachable without this. Same pattern as the questionnaire
+# pages, which already import from `app.scoring`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ui.components import (  # noqa: E402
     app_footer,
     callout,
     feature_grid,
@@ -13,12 +21,12 @@ from ui.components import (
     section_title,
     spacer,
 )
-from ui.icons import icon
-from ui.nav import render_sidebar
-from ui.theme import configure_page
-from utils import init_state
+from ui.icons import icon  # noqa: E402
+from ui.nav import render_sidebar  # noqa: E402
+from ui.theme import configure_page  # noqa: E402
+from utils import init_state  # noqa: E402
 
-from app.config import llm_provider_identity
+from app.config import llm_provider_identity  # noqa: E402
 
 configure_page("Home", "🌿")
 init_state()

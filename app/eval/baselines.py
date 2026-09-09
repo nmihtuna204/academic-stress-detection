@@ -434,6 +434,7 @@ async def _full_one(
     use_questionnaire: bool = True,
     use_emotion: bool = True,
     cache_tag: str = "llm_full",
+    llm=None,
 ) -> tuple[str, bool]:
     """Run the proposed pipeline for one row (ablation-configurable)."""
     from app.api.services import build_rag_query
@@ -492,7 +493,7 @@ async def _full_one(
                 pss_result=pss_result,
                 stress_context=None,
                 retrieved_docs=docs,
-                llm=_eval_llm(),
+                llm=llm,
             )
         except Exception as exc:  # noqa: BLE001 - one bad reply must not end the run
             # Weaker models occasionally emit malformed JSON (a real example:
@@ -533,6 +534,7 @@ async def run_llm_full(
     use_questionnaire: bool = True,
     use_emotion: bool = True,
     system_id: str = "llm_full",
+    llm=None,
 ) -> SystemResult:
     """The proposed system (also the configurable engine for the ablation study).
 
@@ -547,6 +549,16 @@ async def run_llm_full(
     test = df[df["split"] == "test"]
     semaphore = asyncio.Semaphore(get_settings().llm_concurrency)
     cache_tag = f"llm_full:{int(use_rag)}{int(use_questionnaire)}{int(use_emotion)}"
+    # Built once, here, for two reasons. It used to be constructed per row
+    # inside the try block, which meant a missing or rejected credential was
+    # caught by the same handler as a malformed reply and counted as 70 model
+    # failures - producing a table that read as "the model performed badly"
+    # when the truth was "there was no key". Constructing it here lets that
+    # fail immediately and say so. It also stops the tests depending on the
+    # developer's own .env: with `assess` mocked, no client is needed at all,
+    # and a caller can pass one in.
+    if llm is None:
+        llm = _eval_llm()
     outcomes = await asyncio.gather(
         *[
             _full_one(
@@ -557,6 +569,7 @@ async def run_llm_full(
                 use_questionnaire=use_questionnaire,
                 use_emotion=use_emotion,
                 cache_tag=cache_tag,
+                llm=llm,
             )
             for _, row in test.iterrows()
         ]

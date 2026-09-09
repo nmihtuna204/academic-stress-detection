@@ -24,6 +24,14 @@ from app.eval.datasets import (
 )
 
 
+# Passed wherever `assess` is mocked. Without it run_llm_full builds a real
+# ChatOpenAI, which raises "Missing credentials" on any machine without a key -
+# so these tests passed locally only because the developer's .env held one, and
+# failed the moment CI ran them on a clean box. The client is never used here:
+# the mocked `assess` ignores it.
+STUB_LLM = object()
+
+
 class TestDatasets:
     def test_synthetic_dataset_schema(self):
         df = build_synthetic_dataset()
@@ -136,12 +144,12 @@ class TestLlmFullMocked:
 
         df = build_synthetic_dataset()
         small = pd.concat([df[df["split"] == "test"].head(3)])
-        result = asyncio.run(run_llm_full(small, cache_dir=tmp_path))
+        result = asyncio.run(run_llm_full(small, cache_dir=tmp_path, llm=STUB_LLM))
         assert result.y_pred == ["High", "High", "High"]
         assert result.notes["ground_truth_leakage"] is True
         # Second run must be served fully from cache (no assess calls needed).
         monkeypatch.setattr(chain_module, "assess", None)  # would crash if called
-        result2 = asyncio.run(run_llm_full(small, cache_dir=tmp_path))
+        result2 = asyncio.run(run_llm_full(small, cache_dir=tmp_path, llm=STUB_LLM))
         assert result2.y_pred == result.y_pred
 
 
@@ -167,7 +175,7 @@ class TestFailuresAreRecordedAndClassified:
         monkeypatch.setattr(retriever_module, "retrieve", lambda q, k=4: [])
         df = build_synthetic_dataset()
         row = df[df["split"] == "test"].head(1)
-        return asyncio.run(run_llm_full(row, cache_dir=tmp_path))
+        return asyncio.run(run_llm_full(row, cache_dir=tmp_path, llm=STUB_LLM))
 
     def test_malformed_json_counts_as_a_parse_failure(self, tmp_path, monkeypatch):
         from langchain_core.exceptions import OutputParserException
@@ -263,7 +271,7 @@ class TestEvalUsesProductionRetrieval:
 
         df = build_synthetic_dataset()
         row = df[df["split"] == "test"].head(1)
-        asyncio.run(run_llm_full(row, cache_dir=tmp_path))
+        asyncio.run(run_llm_full(row, cache_dir=tmp_path, llm=STUB_LLM))
 
         assert len(seen) == 1
         text = str(row.iloc[0]["text"])

@@ -37,7 +37,11 @@ tìm đến phòng tham vấn tâm lý của trường hoặc cơ sở y tế ch
   chỉ gắn với mã này. Không ai — kể cả nhóm nghiên cứu — truy ngược được mã về
   danh tính của bạn.
 - Nội dung chia sẻ có thể được gửi (dưới dạng ẩn danh) đến dịch vụ mô hình ngôn
-  ngữ (OpenAI) để phân tích. Không thông tin định danh nào đi kèm.
+  ngữ của **bên thứ ba đặt tại Hoa Kỳ** để phân tích. Không thông tin định danh
+  nào đi kèm. Tại thời điểm triển khai hiện tại, dịch vụ đó là **Groq**
+  (`api.groq.com`), chạy mô hình `gpt-oss-120b`. Nếu nhà cung cấp thay đổi, màn
+  hình đồng ý trong ứng dụng sẽ tự hiển thị tên nhà cung cấp đang thực sự nhận
+  dữ liệu — xem `llm_provider_identity()` trong `app/config.py`.
 - Dữ liệu được lưu trên máy chủ của nhóm nghiên cứu, chỉ nhóm nghiên cứu và GVHD
   truy cập được, và chỉ dùng cho mục đích của đề tài này.
 
