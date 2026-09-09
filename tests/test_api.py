@@ -12,18 +12,28 @@ FAKE_EMOTION = EmotionResult(
     emotion_label="stress_high",
     emotion_scores={"stress_high": 0.8},
     sentiment_polarity=SentimentPolarity.NEGATIVE,
-    stress_keywords=["áp lực", "deadline"],
+    stress_keywords=["pressure", "deadline"],
     language=Language.VI,
     model_stress_level=StressLevel.HIGH,
 )
 
-FAKE_ASSESSMENT = LlmAssessment(
-    predicted_level=StressLevel.HIGH,
-    confidence=0.8,
-    reasoning_vi="Bạn có nhiều dấu hiệu căng thẳng.",
-    suggestions_vi=["Ngủ đủ giấc.", "Chia nhỏ bài tập.", "Chia sẻ với bạn bè."],
-    risk_flags=[],
+FAKE_DOC = RetrievedDoc(
+    text="A document.", source="01.md", heading="H", distance=0.1, chunk_id="01.md::0"
 )
+
+
+def make_assessment(citations: list[str] | None = None) -> LlmAssessment:
+    return LlmAssessment(
+        predicted_level=StressLevel.HIGH,
+        confidence=0.8,
+        reasoning="You are showing several signs of stress.",
+        suggestions=["Get enough sleep.", "Break assignments down.", "Talk to a friend."],
+        risk_flags=[],
+        citations=list(citations) if citations is not None else ["01.md::0"],
+    )
+
+
+FAKE_ASSESSMENT = make_assessment()
 
 
 @pytest.fixture()
@@ -35,11 +45,7 @@ def client(tmp_db, monkeypatch):
 
     monkeypatch.setattr(main, "analyze", lambda text: FAKE_EMOTION)
     monkeypatch.setattr(services, "analyze", lambda text: FAKE_EMOTION)
-    monkeypatch.setattr(
-        services,
-        "retrieve",
-        lambda query, k=4: [RetrievedDoc(text="Tài liệu.", source="01.md", heading="H", distance=0.1)],
-    )
+    monkeypatch.setattr(services, "retrieve", lambda query, k=4: [FAKE_DOC])
     monkeypatch.setattr(services, "llm_assess", fake_llm_assess)
     with TestClient(main.app) as test_client:
         yield test_client
@@ -62,23 +68,23 @@ class TestHealth:
 
 class TestAssessText:
     def test_returns_emotion_and_creates_user(self, client):
-        response = client.post("/assess/text", json={"raw_text": "Em rất áp lực vì deadline."})
+        response = client.post("/assess/text", json={"raw_text": "I am under a lot of pressure because of deadlines."})
         assert response.status_code == 200
         body = response.json()
         assert body["student_id"]
         assert body["emotion"]["emotion_label"] == "stress_high"
         assert body["crisis_detected"] is False
-        assert "chẩn đoán" in body["disclaimer_vi"]
+        assert "diagnostic" in body["disclaimer"]
 
     def test_blank_text_rejected(self, client):
         assert client.post("/assess/text", json={"raw_text": "   "}).status_code == 422
 
     def test_crisis_text_bypasses_normal_flow(self, client):
-        response = client.post("/assess/text", json={"raw_text": "em muốn chết cho xong"})
+        response = client.post("/assess/text", json={"raw_text": "I want to kill myself"})
         assert response.status_code == 200
         body = response.json()
         assert body["crisis_detected"] is True
-        assert "115" in body["crisis_message_vi"]
+        assert "115" in body["crisis_message"]
 
 
 class TestAssessQuestionnaire:
@@ -119,7 +125,7 @@ class TestAssessQuestionnaire:
 class TestAssessFull:
     def test_full_pipeline(self, client):
         payload = {
-            "raw_text": "Em rất áp lực vì deadline và mất ngủ.",
+            "raw_text": "I am under a lot of pressure from deadlines and I cannot sleep.",
             "dass21": full_dass(1),
             "pss10": full_pss(3),
             "stress_context": {"sleep_hours_avg": 4.5, "is_exam_period": True},
@@ -129,7 +135,7 @@ class TestAssessFull:
         body = response.json()
         assert body["prediction_id"]
         assert body["assessment"]["predicted_level"] == "High"
-        assert len(body["assessment"]["suggestions_vi"]) == 3
+        assert len(body["assessment"]["suggestions"]) == 3
         assert body["rag_sources"]
         assert body["questionnaire"]["ground_truth_label"]
 
@@ -153,7 +159,7 @@ class TestAssessFull:
 
 class TestHistory:
     def test_history_roundtrip(self, client):
-        created = client.post("/assess/full", json={"raw_text": "Áp lực quá.", "pss10": full_pss(3)})
+        created = client.post("/assess/full", json={"raw_text": "So much pressure.", "pss10": full_pss(3)})
         student_id = created.json()["student_id"]
 
         response = client.get(f"/history/{student_id}")
@@ -165,3 +171,201 @@ class TestHistory:
 
     def test_unknown_student_404(self, client):
         assert client.get("/history/nonexistent-id").status_code == 404
+
+
+class TestAdviceFailureIsExplained:
+    """A missing advice section must say why it is missing.
+
+    Retrieval returning nothing already set `advice_unavailable_reason`, but a
+    failing generation call did not: the page rendered an empty advice block
+    with no explanation, which reads as a broken screen rather than a degraded
+    one and leaves the student guessing whether the silence means something
+    about their results.
+    """
+
+    def test_generation_failure_sets_a_reason(self, client, monkeypatch):
+        import app.api.services as services
+
+        async def boom(**kwargs):
+            raise RuntimeError("Error code: 429 - rate_limit_exceeded")
+
+        monkeypatch.setattr(services, "llm_assess", boom)
+        response = client.post(
+            "/assess/full",
+            json={
+                "raw_text": "I am behind on every subject and I sleep badly.",
+                "dass21": {"answers": {str(i): 1 for i in range(1, 22)}},
+                "pss10": {"answers": {str(i): 2 for i in range(1, 11)}},
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["assessment"] is None
+        assert body["advice_unavailable_reason"], "a silent empty advice section is the bug"
+        # The deterministic half must still be complete.
+        assert body["questionnaire"] is not None
+        assert body["questionnaire"]["ground_truth_label"]
+
+
+class TestGrounding:
+    """Advice must be traceable to retrieved material, or not given at all."""
+
+    def test_no_retrieval_means_no_generated_advice(self, client, monkeypatch):
+        """With nothing retrieved there is nothing to ground advice in.
+
+        Generating anyway is the exact failure the retrieval layer exists to
+        prevent, so the pipeline refuses rather than falling back on the model's
+        own knowledge.
+        """
+        from app.api import services
+
+        called = False
+
+        async def must_not_be_called(**kwargs):
+            nonlocal called
+            called = True
+            return FAKE_ASSESSMENT
+
+        monkeypatch.setattr(services, "retrieve", lambda query, k=4: [])
+        monkeypatch.setattr(services, "llm_assess", must_not_be_called)
+
+        response = client.post("/assess/full", json={"dass21": full_dass(1)})
+        body = response.json()
+
+        assert called is False, "the generator must not run without retrieved context"
+        assert body["assessment"] is None
+        assert body["advice_unavailable_reason"]
+        # Deterministic scoring is unaffected by the refusal.
+        assert body["questionnaire"]["dass21"]["depression_score"] == 14
+
+    def test_valid_citations_are_resolved_to_readable_sources(self, client):
+        response = client.post("/assess/full", json={"dass21": full_dass(1)})
+        body = response.json()
+        assert body["assessment"]["citations"] == ["01.md::0"]
+        assert body["cited_sources"] == ["01.md — H"]
+
+    def test_citations_not_in_retrieved_context_are_discarded(self, client, monkeypatch):
+        """A citation the model invented is a fabricated provenance claim."""
+        from app.api import services
+
+        async def fabricating_llm(**kwargs):
+            return make_assessment(citations=["01.md::0", "99_invented.md::7"])
+
+        monkeypatch.setattr(services, "llm_assess", fabricating_llm)
+
+        body = client.post("/assess/full", json={"dass21": full_dass(1)}).json()
+        assert body["assessment"]["citations"] == ["01.md::0"]
+        assert body["cited_sources"] == ["01.md — H"]
+
+    def test_uncited_advice_is_reported_as_uncited(self, client, monkeypatch):
+        from app.api import services
+
+        async def uncited_llm(**kwargs):
+            return make_assessment(citations=[])
+
+        monkeypatch.setattr(services, "llm_assess", uncited_llm)
+
+        body = client.post("/assess/full", json={"dass21": full_dass(1)}).json()
+        assert body["assessment"] is not None
+        assert body["cited_sources"] == []
+
+    def test_retrieved_and_cited_are_reported_separately(self, client, monkeypatch):
+        """`rag_sources` is what was searched; it is not evidence of use."""
+        from app.api import services
+
+        async def partly_cited(**kwargs):
+            return make_assessment(citations=[])
+
+        monkeypatch.setattr(services, "llm_assess", partly_cited)
+
+        body = client.post("/assess/full", json={"dass21": full_dass(1)}).json()
+        assert body["rag_sources"] == ["01.md — H"]
+        assert body["cited_sources"] == []
+
+
+class TestCrisisDisclosuresAreNotRetained:
+    """The crisis rule must clear before anything the student disclosed is stored.
+
+    Persisting a self-harm disclosure and only then deciding it was a crisis is
+    the worst-case ordering: the most sensitive text in the system would be the
+    text most certainly written to disk.
+    """
+
+    def test_crisis_text_is_not_stored(self, client):
+        response = client.post("/assess/text", json={"raw_text": "I want to kill myself"})
+        student_id = response.json()["student_id"]
+
+        history = client.get(f"/history/{student_id}").json()
+        assert history["text_entries"] == []
+
+    def test_crisis_questionnaire_is_not_stored(self, client):
+        answers = {str(i): 0 for i in range(1, 22)}
+        answers["17"] = 3
+        answers["21"] = 3
+        response = client.post("/assess/questionnaire", json={"dass21": {"answers": answers}})
+        assert response.json()["crisis_detected"] is True
+        student_id = response.json()["student_id"]
+
+        history = client.get(f"/history/{student_id}").json()
+        assert history["questionnaire_responses"] == []
+
+    def test_full_pipeline_stores_nothing_on_crisis(self, client):
+        payload = {
+            "raw_text": "I want to kill myself",
+            "dass21": full_dass(2),
+            "pss10": full_pss(3),
+            "stress_context": {"sleep_hours_avg": 4.0},
+        }
+        response = client.post("/assess/full", json=payload)
+        body = response.json()
+        assert body["crisis_detected"] is True
+
+        history = client.get(f"/history/{body['student_id']}").json()
+        assert history["text_entries"] == []
+        assert history["questionnaire_responses"] == []
+        assert history["predictions"] == []
+
+    def test_non_crisis_input_is_still_stored(self, client):
+        """The guard must not silently stop ordinary submissions being recorded."""
+        response = client.post("/assess/full", json={"raw_text": "So much pressure.", "pss10": full_pss(3)})
+        history = client.get(f"/history/{response.json()['student_id']}").json()
+        assert len(history["text_entries"]) == 1
+        assert len(history["questionnaire_responses"]) == 1
+
+
+class TestDeleteSession:
+    """The consent document promises a right to withdraw; this is it."""
+
+    def test_delete_removes_every_trace(self, client):
+        created = client.post(
+            "/assess/full",
+            json={
+                "raw_text": "So much pressure.",
+                "dass21": full_dass(1),
+                "pss10": full_pss(3),
+                "stress_context": {"sleep_hours_avg": 6.0},
+            },
+        )
+        student_id = created.json()["student_id"]
+        assert client.get(f"/history/{student_id}").status_code == 200
+
+        response = client.delete(f"/session/{student_id}")
+        assert response.status_code == 200
+        deleted = response.json()["deleted"]
+        assert deleted["text_entries"] == 1
+        assert deleted["questionnaire_responses"] == 1
+        assert deleted["stress_contexts"] == 1
+        assert deleted["predictions"] == 1
+        assert deleted["users"] == 1
+
+        # The id itself is gone, so history can no longer resolve it.
+        assert client.get(f"/history/{student_id}").status_code == 404
+
+    def test_delete_unknown_student_404(self, client):
+        assert client.delete("/session/nonexistent-id").status_code == 404
+
+    def test_delete_is_not_repeatable(self, client):
+        created = client.post("/assess/text", json={"raw_text": "So much pressure."})
+        student_id = created.json()["student_id"]
+        assert client.delete(f"/session/{student_id}").status_code == 200
+        assert client.delete(f"/session/{student_id}").status_code == 404

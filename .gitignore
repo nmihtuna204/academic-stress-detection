@@ -33,6 +33,22 @@ data/chroma/
 data/eval/*
 # ...except hand-written evaluation source data (not derived):
 !data/eval/crisis_testset.jsonl
+!data/eval/crisis_testset_en.jsonl
+!data/eval/crisis_testset_heldout.jsonl
+!data/eval/retrieval_queries.jsonl
 .pytest_cache/
 models/
 *.log
+
+# Tooling caches and coverage output (regenerated on every run)
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Editor-local agent permissions (machine-specific paths, not project config)
+.claude/settings.local.json
+
+# Editor backups
+*.bak

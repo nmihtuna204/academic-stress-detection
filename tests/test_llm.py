@@ -29,10 +29,10 @@ def make_dass_answers(value: int = 0, overrides: dict[int, int] | None = None) -
 
 class TestCrisisDetection:
     def test_self_harm_text_triggers(self):
-        result = check_crisis(raw_text="em thấy không muốn sống nữa")
+        result = check_crisis(raw_text="I dont want to live anymore")
         assert result.is_crisis
         assert "self_harm_language_in_text" in result.reasons
-        assert result.message_vi and "115" in result.message_vi
+        assert result.message and "115" in result.message
 
     def test_maximal_risk_items_trigger(self):
         answers = make_dass_answers(0, {17: 3, 21: 3})
@@ -49,12 +49,12 @@ class TestCrisisDetection:
 
     def test_ordinary_stress_does_not_trigger(self):
         result = check_crisis(
-            raw_text="em rất áp lực vì deadline và mất ngủ",
+            raw_text="I am under a lot of pressure from deadlines and cannot sleep",
             dass_answers=make_dass_answers(1),
             dass_depression_severity="Mild",
         )
         assert not result.is_crisis
-        assert result.message_vi is None
+        assert result.message is None
 
     def test_no_input_no_crisis(self):
         assert not check_crisis().is_crisis
@@ -64,11 +64,11 @@ VALID_LLM_JSON = json.dumps(
     {
         "predicted_level": "High",
         "confidence": 0.78,
-        "reasoning_vi": "Bạn đang có nhiều dấu hiệu căng thẳng: điểm DASS-21 ở mức cao, thiếu ngủ và nhiều deadline.",
-        "suggestions_vi": [
-            "Chia nhỏ bài tập thành các phần 30 phút và làm phần dễ trước.",
-            "Cố định giờ ngủ, tránh màn hình 30 phút trước khi ngủ.",
-            "Chia sẻ với một người bạn tin tưởng hoặc phòng tham vấn của trường.",
+        "reasoning": "You are showing several signs of stress: high DASS-21 scores, too little sleep and many deadlines.",
+        "suggestions": [
+            "Split assignments into 30-minute chunks and start with the easiest part.",
+            "Keep a fixed bedtime and avoid screens 30 minutes before sleep.",
+            "Talk to a friend you trust or your university counselling office.",
         ],
         "risk_flags": ["sleep_deprivation"],
     },
@@ -87,13 +87,13 @@ class TestChain:
             emotion_label="stress_high",
             emotion_scores={"stress_high": 0.8},
             sentiment_polarity=SentimentPolarity.NEGATIVE,
-            stress_keywords=["áp lực", "mất ngủ"],
+            stress_keywords=["pressure", "insomnia"],
             language=Language.VI,
             model_stress_level=StressLevel.HIGH,
         )
-        docs = [RetrievedDoc(text="Ngủ đủ giấc giúp giảm stress.", source="04.md", heading="Ngủ", distance=0.2)]
+        docs = [RetrievedDoc(text="Enough sleep helps reduce stress.", source="04.md", heading="Sleep", distance=0.2)]
         result = await assess(
-            raw_text="Em rất áp lực vì deadline, đêm nào cũng mất ngủ.",
+            raw_text="I am under so much deadline pressure that I cannot sleep at night.",
             emotion=emotion,
             dass_result={
                 "depression": {"score": 10, "severity": "Mild"},
@@ -108,8 +108,54 @@ class TestChain:
         )
         assert result.predicted_level == StressLevel.HIGH
         assert result.confidence == pytest.approx(0.78)
-        assert len(result.suggestions_vi) == 3
+        assert len(result.suggestions) == 3
         assert "sleep_deprivation" in result.risk_flags
+
+    @pytest.mark.asyncio
+    async def test_wrapped_json_still_parses(self):
+        """Fences, preamble and <think> blocks must not cost a whole assessment.
+
+        The 2026-09-08 run lost 7/70 full-pipeline responses and 9/30 ablation
+        responses to a strict parser, each falling back to a fixed "Moderate"
+        label, while the zero-shot baseline - which cleaned its replies - lost
+        none against the same model. Each wrapper below is a form that run saw.
+        """
+        wrappers = {
+            "fenced": "```json\n" + VALID_LLM_JSON + "\n```",
+            "bare_fence": "```\n" + VALID_LLM_JSON + "\n```",
+            "preamble": "Here is my assessment:\n" + VALID_LLM_JSON,
+            "trailing": VALID_LLM_JSON + "\n\nLet me know if you need more.",
+            "think_block": "<think>weighing the evidence</think>\n" + VALID_LLM_JSON,
+        }
+        for name, content in wrappers.items():
+            result = await assess(
+                raw_text="test",
+                emotion=None,
+                dass_result=None,
+                pss_result=None,
+                stress_context=None,
+                retrieved_docs=[],
+                llm=make_fake_llm(content),
+            )
+            assert result.predicted_level == StressLevel.HIGH, name
+
+    @pytest.mark.asyncio
+    async def test_grounded_reply_with_one_suggestion_is_accepted(self):
+        """Rule 4 outranks the count of 3, so the schema floor must allow it."""
+        import json as _json
+
+        payload = _json.loads(VALID_LLM_JSON)
+        payload["suggestions"] = ["Keep a fixed bedtime, per the sleep material."]
+        result = await assess(
+            raw_text="test",
+            emotion=None,
+            dass_result=None,
+            pss_result=None,
+            stress_context=None,
+            retrieved_docs=[],
+            llm=make_fake_llm(_json.dumps(payload, ensure_ascii=False)),
+        )
+        assert len(result.suggestions) == 1
 
     @pytest.mark.asyncio
     async def test_invalid_llm_output_raises(self):
@@ -140,17 +186,17 @@ class TestChain:
 
 class TestPromptFormatting:
     def test_format_emotion_none(self):
-        assert "không có" in format_emotion(None)
+        assert "no free-text data" in format_emotion(None)
 
     def test_format_emotion_full(self):
         emotion = EmotionResult(
             emotion_label="negative",
             emotion_scores={"sentiment_neg": 0.9},
             sentiment_polarity=SentimentPolarity.NEGATIVE,
-            stress_keywords=["bế tắc"],
+            stress_keywords=["stuck"],
         )
         text = format_emotion(emotion)
-        assert "bế tắc" in text
+        assert "stuck" in text
         assert "negative" in text
 
     def test_format_questionnaires_both(self):
@@ -170,7 +216,24 @@ class TestPromptFormatting:
         text = format_context(StressContextIn(sleep_hours_avg=5, financial_stress=4))
         assert "5" in text and "4" in text
 
-    def test_format_retrieved_docs(self):
-        docs = [RetrievedDoc(text="Nội dung.", source="01.md", heading="H", distance=0.1)]
-        assert "Tài liệu 1" in format_retrieved_docs(docs)
-        assert "không có tài liệu" in format_retrieved_docs([])
+    def test_format_retrieved_docs_labels_each_block_with_its_citable_id(self):
+        """The chunk id is the citation handle the prompt tells the model to use.
+
+        If it stops appearing, the model cannot cite anything the service is able
+        to verify, and citation validation silently discards everything.
+        """
+        docs = [
+            RetrievedDoc(
+                text="Content.", source="01.md", heading="H", distance=0.1, chunk_id="01.md::0"
+            )
+        ]
+        rendered = format_retrieved_docs(docs)
+        assert "01.md::0" in rendered
+        assert "Content." in rendered
+        assert "H" in rendered
+
+    def test_format_retrieved_docs_empty_states_the_refusal_rule(self):
+        rendered = format_retrieved_docs([])
+        assert "no reference material" in rendered
+        # The model is told not to fill the gap from its own knowledge.
+        assert "do not" in rendered.lower()

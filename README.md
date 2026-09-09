@@ -1,53 +1,61 @@
 # Academic Stress Detection System for Vietnamese University Students
 
 An LLM-powered web application that estimates the academic stress level of
-Vietnamese university students from (a) free-text input in Vietnamese and
-(b) standardized questionnaires (DASS-21, PSS-10), and returns an explainable
-assessment with RAG-grounded coping suggestions.
+university students from (a) free-text input and (b) standardized
+questionnaires (DASS-21, PSS-10), and returns an explainable assessment with
+RAG-grounded coping suggestions. The interface is English; the free-text
+analysis accepts English and Vietnamese.
 
 > ⚠️ **This is a screening/self-reflection aid, NOT a diagnostic tool.** Every
-> result screen shows this disclaimer in Vietnamese, and a deterministic
-> crisis-detection rule surfaces Vietnamese mental-health helplines instead of
-> a normal assessment when self-harm risk is indicated.
+> result screen shows this disclaimer, and a deterministic crisis-detection
+> rule surfaces Vietnamese mental-health helplines instead of a normal
+> assessment when self-harm risk is indicated.
 
 ## Architecture
 
 ```
-Streamlit UI (Vietnamese, multipage)          FastAPI backend
+Streamlit UI (English, multipage)             FastAPI backend
 ┌───────────────────────────────┐   HTTP    ┌──────────────────────────────────┐
-│ 1. Trang chủ / consent        │ ────────▶ │ POST /assess/text                │
-│ 2. Nhập cảm nghĩ (free text)  │           │ POST /assess/questionnaire       │
+│ 1. Home / consent             │ ────────▶ │ POST /assess/text                │
+│ 2. Share how you feel (text)  │           │ POST /assess/questionnaire       │
 │ 3. DASS-21   4. PSS-10        │           │ POST /assess/full                │
-│ 5. Bối cảnh & nguồn lực       │           │ GET  /history/{student_id}       │
-│ 6. Kết quả   7. Lịch sử       │           │ GET  /health                     │
+│ 5. Academic context           │           │ GET  /history/{student_id}       │
+│ 6. Results   7. History       │           │ DEL  /session/{student_id}       │
+│                               │           │ GET  /health                     │
 └───────────────────────────────┘           └───────┬──────────────────────────┘
                                                     │
         ┌───────────────┬───────────────┬───────────┼───────────────┐
         ▼               ▼               ▼           ▼               ▼
   Crisis rule     Scoring engines   NLP (PhoBERT   ChromaDB RAG   LangChain +
-  (deterministic, (DASS-21/PSS-10,  stress clf +   (Vietnamese    OpenAI
-  runs first)     ground truth)     VN stress      knowledge      (structured
+  (deterministic, (DASS-21/PSS-10,  stress clf +   (English       OpenAI
+  runs first)     ground truth)     bilingual      knowledge      (structured
                                     lexicon)       base)          JSON output)
                                         └──────── SQLite via SQLAlchemy ───────┘
 ```
 
 The pipeline for `POST /assess/full`:
 
-1. **NLP** — fine-tuned local PhoBERT stress classifier + a ~90-term Vietnamese
+1. **NLP** — fine-tuned local PhoBERT stress classifier + a bilingual
    stress-keyword lexicon; sentiment polarity is derived from these two signals
    (no separate sentiment model, fully offline; degrades to lexicon-only if the
-   classifier is unavailable).
+   classifier is unavailable). PhoBERT is Vietnamese-only, so it is consulted
+   only for Vietnamese input; English text is scored by the lexicon alone.
 2. **Deterministic scoring** — official DASS-21 and PSS-10 scoring rules produce
    the ground-truth label (`Low/Moderate/High/Severe`).
 3. **Crisis rule** — runs *before* any LLM call; on self-harm signals the flow
    bypasses the LLM and returns helpline information.
-4. **RAG** — top-k retrieval from a curated Vietnamese knowledge base
-   (ChromaDB, multilingual sentence-transformer embeddings).
-5. **LLM** — a LangChain chain (OpenAI) returns structured JSON: predicted
-   level, confidence, Vietnamese reasoning, 3 actionable suggestions, risk
-   flags. If the LLM fails, deterministic results are still returned.
+4. **RAG** — top-k retrieval from a curated knowledge base (ChromaDB,
+   multilingual sentence-transformer embeddings). Retrieval quality is measured;
+   see [docs/RESULTS.md](docs/RESULTS.md) §4b.
+5. **LLM** — a LangChain chain returns structured JSON: predicted level,
+   confidence, reasoning, 3 actionable suggestions, risk flags and citations.
+   Suggestions may not go beyond the retrieved material, citations are verified
+   against what was actually retrieved, and an empty retrieval means no advice
+   is generated at all. If the LLM fails, deterministic results are still
+   returned.
 6. **Persistence** — every artifact is stored under an anonymized UUID; no
-   personally identifying fields are ever sent to the OpenAI API.
+   personally identifying fields are ever sent to the language-model provider.
+   Crisis disclosures are never persisted.
 
 ## Setup
 
@@ -55,7 +63,8 @@ Requirements: Python 3.11+ (developed on 3.13), ~4 GB disk for models.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # then set OPENAI_API_KEY
+cp .env.example .env          # then set OPENAI_API_KEY (any OpenAI-compatible
+                              # provider works, see docs/RUNNING_LLM_EVAL.md)
 ```
 
 Optional but recommended — the local fine-tuned PhoBERT stress classifier is
@@ -78,7 +87,7 @@ First run downloads the multilingual embedding model (~500 MB) once.
 uvicorn app.api.main:app --port 8000
 
 # Terminal 2 — UI (http://localhost:8501)
-streamlit run streamlit_app/Trang_Chu.py
+streamlit run streamlit_app/Home.py
 ```
 
 Or with Docker:
@@ -118,7 +127,11 @@ as such in every output. Commands, in the order a fresh clone would run them:
 # 0. One-time setup
 pip install -r requirements.txt
 cp .env.example .env               # set OPENAI_API_KEY for the LLM systems
+#    Any OpenAI-compatible provider works via OPENAI_BASE_URL (Groq,
+#    OpenRouter, Gemini, local Ollama). Step-by-step: docs/RUNNING_LLM_EVAL.md
 python scripts/seed.py --rows 200  # ChromaDB ingestion + synthetic DB rows
+
+python scripts/check_llm.py        # pre-flight the LLM provider before spending quota
 
 # 1. Baseline comparison (tfidf_lr, phobert_ft, llm_zeroshot, llm_full)
 #    Same frozen stratified split for every system; LLM responses are cached
@@ -135,12 +148,17 @@ python -m app.eval.ablation --dataset synthetic
 python -m app.eval.crisis_eval
 #    -> data/eval/crisis_eval.md  (precision/recall/F1 + every FP/FN verbatim)
 
-# 4. Real-data study, once participants have used the app
+# 4. Retrieval-quality evaluation (57 hand-labeled queries; offline)
+python -m app.eval.retrieval_eval
+#    -> data/eval/retrieval_eval.md  (Recall@k / MRR / nDCG@k, k sweep,
+#       breakdown by query shape, and every miss verbatim)
+
+# 5. Real-data study, once participants have used the app
 python scripts/export_dataset.py --split      # SQLite -> data/real/dataset.csv
 python scripts/data_quality_report.py         # flag suspect submissions
 python -m app.eval.compare --dataset real     # identical pipeline, real data
 
-# 5. Human evaluation
+# 6. Human evaluation
 python -m app.eval.export_for_rating --n 30 --raters 3   # blank rating sheets
 python -m app.eval.rating_analysis --dir data/eval/rating # after sheets return
 python -m app.eval.sus_score --csv <sus_responses.csv>    # SUS usability score
@@ -150,6 +168,21 @@ Determinism notes: every script takes `--seed` (default 42) where randomness
 exists; the train/test split is frozen in `data/stress_dataset_split.csv`
 (reused so PhoBERT's fine-tuning train set never leaks into test); LLM calls
 run at temperature 0 for `llm_zeroshot` and are disk-cached for all systems.
+
+## Report and slides
+
+The Markdown report is the single source of truth; the other formats are
+generated from it, so a number can never differ between them.
+
+```bash
+python report/build_docx.py     # -> report/PreThesis_Report.docx
+python report/build_latex.py    # -> report/PreThesis_Report.tex   (~53 pages)
+python report/build_slides.py   # -> report/PreThesis_Slides.pptx  (22 slides)
+```
+
+The `.tex` needs **XeLaTeX or LuaLaTeX**, not pdfLaTeX: the report contains
+Vietnamese verbatim quotations and Greek letters. On Overleaf, set
+Menu -> Compiler -> XeLaTeX. Slides need `python-pptx`.
 
 ## Repository layout
 
@@ -173,12 +206,23 @@ tests/              pytest suite
 ## Safety design
 
 - **Non-diagnostic disclaimer** on every result surface (API responses carry
-  `disclaimer_vi`; every UI page renders it).
+  `disclaimer`; every UI page renders it).
 - **Crisis detection** is deterministic and runs before the LLM: explicit
-  Vietnamese self-harm phrases in text, or DASS-21 risk items (17, 21) at
+  self-harm phrases in text (English and Vietnamese), or DASS-21 risk items (17, 21) at
   maximum, or Extremely Severe depression with an elevated risk item, all
   bypass the normal output and show helplines (Ngày Mai 096 306 1414, 111, 115).
-- **Consent gate** before any data entry; only anonymized UUIDs are stored.
+- **Crisis disclosures are not retained.** The rule runs before any write, so a
+  self-harm disclosure is routed to helplines and never persisted. Only the
+  trigger reasons are logged, never the text.
+- **The validated instrument decides the headline.** When a DASS-21 / PSS-10
+  score exists it is what the results page reports; the LLM supplies explanation
+  and suggestions only. Disagreement between the two is shown to the student,
+  and its rate is reported by `app/eval/evaluate.py`.
+- **Right to withdraw**: `DELETE /session/{student_id}` erases every row for an
+  anonymized id, exposed as a two-step control on the History page.
+- **Consent gate** before any data entry; only anonymized UUIDs are stored. The
+  in-app consent states third-party (OpenAI) processing, the retention period,
+  and the right to erase.
 - **Privacy**: the LLM prompt contains the free text, scores, and non-identifying
   context only — never IDs or demographic identifiers.
 

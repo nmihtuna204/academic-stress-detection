@@ -12,8 +12,16 @@ Generates a CSV where every record is driven by a single latent stress level
 6. Stress sources & coping          (academic / lifestyle / coping, Likert 1-5)
 7. Training labels                  (stress_label 3-class + binary)
 
+LANGUAGE NOTE: the sentence templates below stay in Vietnamese on purpose, even
+though the application interface is English. They are the provenance of
+`data/stress_dataset_split.csv`, the frozen split the PhoBERT classifier was
+fine-tuned on and against which every classification result in the report was
+measured. Translating them would make this script generate a different corpus
+from the one those results describe, silently breaking reproducibility. The
+generated text is training data, not user-facing copy.
+
 Usage:
-    python app/generate_dataset.py --rows 500 --seed 42 --out data/stress_dataset.csv
+    python research/generate_dataset.py --rows 500 --seed 42 --out data/stress_dataset.csv
 """
 
 from __future__ import annotations

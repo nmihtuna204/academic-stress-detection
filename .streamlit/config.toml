@@ -1,0 +1,26 @@
+# Streamlit theme — "calm companion" direction for the academic-stress app.
+# Tokens are defined once in streamlit_app/ui/tokens.py and mirrored into CSS by
+# streamlit_app/ui/theme.py; the values below only cover what Streamlit paints
+# before that stylesheet loads, so the first frame is already on-palette.
+# Stress-level colors (Low/Moderate/High/Severe) live in ui/tokens.py and are
+# intentionally NOT set here — they carry meaning and are always paired with text.
+
+[theme]
+base = "light"
+primaryColor = "#4F8EF7"             # calm blue — brand accent (buttons, focus)
+backgroundColor = "#F8FAFC"          # app canvas
+secondaryBackgroundColor = "#FFFFFF" # sidebar + cards + inputs
+textColor = "#1E293B"                # slate ink
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"              # hide the dev toolbar for a product feel
+# A participant in a mental-health study must never be shown a Python traceback:
+# it is alarming, it leaks file paths and internals, and during a live
+# demonstration it turns any transient error into the thing the audience reads.
+# Errors still appear in full in the server log, where they belong.
+showErrorDetails = false
+
+[server]
+headless = true
+enableStaticServing = true           # serve self-hosted fonts from streamlit_app/static/

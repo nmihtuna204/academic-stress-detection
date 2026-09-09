@@ -87,7 +87,7 @@ class TestQualityReport:
         session = next(get_session())
         try:
             sid = self.make_user(session, dass_value=2, pss_values=3,
-                                 text="một " * 30)
+                                 text="word " * 30)
             user = session.get(User, sid)
             response = user.questionnaire_responses[0]
             flags = data_quality_report.check_student(user, response, user.text_entries[0])
@@ -99,7 +99,7 @@ class TestQualityReport:
     def test_short_text_and_fast_completion_flagged(self, tmp_db):
         session = next(get_session())
         try:
-            sid = self.make_user(session, dass_value=None, text="ngắn quá",
+            sid = self.make_user(session, dass_value=None, text="too short",
                                  minutes_elapsed=0.5)
             user = session.get(User, sid)
             flags = data_quality_report.check_student(
@@ -113,7 +113,7 @@ class TestQualityReport:
     def test_dass_pss_mismatch_flagged(self, tmp_db):
         session = next(get_session())
         try:
-            sid = self.make_user(session, text="từ " * 25,
+            sid = self.make_user(session, text="word " * 25,
                                  dass_level="Extremely Severe", pss_cat="Low")
             user = session.get(User, sid)
             flags = data_quality_report.check_student(
@@ -141,7 +141,7 @@ class TestQualityReport:
             session.add(response)
             entry = TextEntry(
                 student_id=user.student_id,
-                raw_text="tuần này em học nhiều nhưng vẫn ổn " * 4,
+                raw_text="this week I studied a lot but I am still okay " * 4,
                 text_length=100,
             )
             session.add(entry)

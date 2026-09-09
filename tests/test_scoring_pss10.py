@@ -27,7 +27,7 @@ class TestStructure:
         assert {q["id"] for q in PSS10_QUESTIONS if q["reverse"]} == {4, 5, 7, 8}
 
     def test_vietnamese_text_present(self):
-        assert all(q["text_vi"] for q in PSS10_QUESTIONS)
+        assert all(q["text"] for q in PSS10_QUESTIONS)
 
 
 class TestScoring:

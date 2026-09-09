@@ -1,4 +1,8 @@
-"""PSS-10 questionnaire page (10 items, 0-4 scale, Vietnamese wording)."""
+"""PSS-10 questionnaire (10 items, 0-4 scale).
+
+Same presentation approach as the DASS-21 page: no `st.form`, so the progress
+counter tracks the student live. Scale and validation are unchanged.
+"""
 
 import sys
 from pathlib import Path
@@ -6,45 +10,68 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from app.scoring.pss10 import ANSWER_CHOICES_VI, PSS10_QUESTIONS  # noqa: E402
+from app.scoring.pss10 import ANSWER_CHOICES, PSS10_QUESTIONS  # noqa: E402
 
-from utils import require_consent, show_disclaimer  # noqa: E402
+from ui.components import (  # noqa: E402
+    app_footer,
+    callout,
+    page_header,
+    progress_bar,
+    question_card,
+    spacer,
+)
+from ui.nav import render_sidebar  # noqa: E402
+from ui.theme import configure_page  # noqa: E402
+from utils import require_consent  # noqa: E402
 
-st.set_page_config(page_title="PSS-10", page_icon="📋", layout="wide")
+configure_page("PSS-10", "📊")
 require_consent()
+render_sidebar("pss")
 
-st.title("📋 Bảng hỏi PSS-10")
-st.markdown(
-    "Với mỗi câu, hãy chọn tần suất phù hợp với bạn **trong 1 tháng vừa qua**."
+TOTAL = len(PSS10_QUESTIONS)
+OPTIONS = [f"{value} — {label}" for value, label in ANSWER_CHOICES.items()]
+
+page_header(
+    "PSS-10 questionnaire",
+    subtitle="For each question, choose how often it applied to you **over the past month**.",
+    icon_name="chart-bar",
+    eyebrow="Step 3",
 )
 
-OPTIONS = [f"{value} — {label}" for value, label in ANSWER_CHOICES_VI.items()]
+for question in PSS10_QUESTIONS:
+    key = f"pss_{question['id']}"
+    if key not in st.session_state:
+        previous = st.session_state.pss_answers.get(question["id"])
+        st.session_state[key] = OPTIONS[previous] if previous is not None else None
 
-with st.form("pss10_form"):
-    answers: dict[int, int] = {}
-    for question in PSS10_QUESTIONS:
-        qid = question["id"]
-        previous = st.session_state.pss_answers.get(qid)
-        choice = st.radio(
-            f"**Câu {qid}.** {question['text_vi']}",
+answered = sum(1 for q in PSS10_QUESTIONS if st.session_state.get(f"pss_{q['id']}") is not None)
+progress_bar(answered, TOTAL)
+
+for question in PSS10_QUESTIONS:
+    qid = question["id"]
+    with question_card(qid, question["text"]):
+        st.radio(
+            f"Question {qid}",
             OPTIONS,
-            index=previous if previous is not None else None,
             key=f"pss_{qid}",
+            label_visibility="collapsed",
         )
-        if choice is not None:
-            answers[qid] = OPTIONS.index(choice)
-        st.divider()
 
-    submitted = st.form_submit_button("Lưu PSS-10 💾", type="primary")
+st.session_state.pss_answers = {
+    q["id"]: OPTIONS.index(st.session_state[f"pss_{q['id']}"])
+    for q in PSS10_QUESTIONS
+    if st.session_state.get(f"pss_{q['id']}") is not None
+}
 
-if submitted:
-    if len(answers) < 10:
-        st.error(f"Bạn còn {10 - len(answers)} câu chưa trả lời. Vui lòng trả lời đủ 10 câu.")
-    else:
-        st.session_state.pss_answers = answers
-        st.success("Đã lưu PSS-10! Hãy điền thêm bối cảnh học tập của bạn.")
+spacer(12)
+if answered < TOTAL:
+    callout("info", f"You still have **{TOTAL - answered} items** to answer.")
+else:
+    callout("success", "PSS-10 done. Now tell us a little about your academic context.")
+    st.page_link(
+        "pages/4_Context.py",
+        label="Continue: Academic context",
+        icon=":material/arrow_forward:",
+    )
 
-if len(st.session_state.pss_answers) == 10:
-    st.page_link("pages/4_Boi_canh.py", label="👉 Tiếp tục: Bối cảnh & nguồn lực", icon="🎒")
-
-show_disclaimer()
+app_footer()

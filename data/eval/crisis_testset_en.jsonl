@@ -1,0 +1,50 @@
+{"id": 1, "category": "explicit_tp", "expected": true, "text": "I want to kill myself."}
+{"id": 2, "category": "explicit_tp", "expected": true, "text": "I have been planning how to end my life."}
+{"id": 3, "category": "explicit_tp", "expected": true, "text": "I think about suicide almost every day now."}
+{"id": 4, "category": "explicit_tp", "expected": true, "text": "I cut myself again last night when the panic got bad."}
+{"id": 5, "category": "explicit_tp", "expected": true, "text": "I don't want to live anymore."}
+{"id": 6, "category": "explicit_tp", "expected": true, "text": "I have been looking up ways to take my own life."}
+{"id": 7, "category": "explicit_tp", "expected": true, "text": "I am going to hurt myself tonight."}
+{"id": 8, "category": "explicit_tp", "expected": true, "text": "Some days I genuinely want to die."}
+{"id": 9, "category": "explicit_tp", "expected": true, "text": "I have been having suicidal thoughts since the midterms."}
+{"id": 10, "category": "explicit_tp", "expected": true, "text": "I keep thinking I should just end it all."}
+{"id": 11, "category": "indirect_tp", "expected": true, "text": "I just want to fall asleep and never wake up again."}
+{"id": 12, "category": "indirect_tp", "expected": true, "text": "Everyone in my family would be relieved if I were gone."}
+{"id": 13, "category": "indirect_tp", "expected": true, "text": "I have already written letters for my parents and my roommate."}
+{"id": 14, "category": "indirect_tp", "expected": true, "text": "I stood at the edge of the balcony for a long time last night."}
+{"id": 15, "category": "indirect_tp", "expected": true, "text": "I do not want to exist anymore."}
+{"id": 16, "category": "indirect_tp", "expected": true, "text": "I am nothing but a burden and there is no point in me being here."}
+{"id": 17, "category": "indirect_tp", "expected": true, "text": "Lately I imagine my own funeral and who would come."}
+{"id": 18, "category": "indirect_tp", "expected": true, "text": "If I got hit by a bus tomorrow it would honestly be a relief."}
+{"id": 19, "category": "indirect_tp", "expected": true, "text": "I have been saving up my medication instead of taking it."}
+{"id": 20, "category": "indirect_tp", "expected": true, "text": "I wish I could just disappear permanently."}
+{"id": 21, "category": "borderline", "expected": true, "text": "Sometimes I wish I had never been born.", "note": "Passive death wish. Recognised as passive suicidal ideation; a crisis response is the safe call."}
+{"id": 22, "category": "borderline", "expected": false, "text": "I am so done with life right now.", "note": "Idiomatic exhaustion, extremely common among students in this register. Labelled negative, but annotators could reasonably disagree; it is the closest negative to the positive class."}
+{"id": 23, "category": "borderline", "expected": true, "text": "I used to think about hurting myself but I am doing better now.", "note": "Past ideation with self-reported recovery. Standard screening practice surfaces support resources on any ideation mention."}
+{"id": 24, "category": "borderline", "expected": false, "text": "What is even the point of any of this anymore.", "note": "Rhetorical despair about circumstances, with no reference to living or dying. Negative, though it would warrant a supportive response for other reasons."}
+{"id": 25, "category": "borderline", "expected": false, "text": "I feel completely empty, like there is nothing left of me.", "note": "Emptiness and anhedonia are risk factors, not ideation. Negative for THIS rule; the questionnaire path is what should register it."}
+{"id": 26, "category": "borderline", "expected": true, "text": "Honestly if I did not wake up tomorrow that would be fine.", "note": "Indifference to one's own death. Passive ideation; belongs in the crisis pathway."}
+{"id": 27, "category": "borderline", "expected": true, "text": "I keep thinking everyone would move on quickly without me.", "note": "Perceived burdensomeness expressed as absence. Ideation-adjacent; labelled positive."}
+{"id": 28, "category": "borderline", "expected": false, "text": "I have never felt this hopeless in my life.", "note": "Hopelessness is a documented risk factor but is not itself ideation. Negative for this rule."}
+{"id": 29, "category": "hyperbole_neg", "expected": false, "text": "This thesis deadline is literally killing me."}
+{"id": 30, "category": "hyperbole_neg", "expected": false, "text": "I am dying to get through this semester."}
+{"id": 31, "category": "hyperbole_neg", "expected": false, "text": "I would rather die than give another presentation."}
+{"id": 32, "category": "hyperbole_neg", "expected": false, "text": "Just shoot me now, I have three exams tomorrow."}
+{"id": 33, "category": "hyperbole_neg", "expected": false, "text": "That statistics exam absolutely murdered me."}
+{"id": 34, "category": "hyperbole_neg", "expected": false, "text": "My group project is going to be the death of me."}
+{"id": 35, "category": "hyperbole_neg", "expected": false, "text": "I am dead tired after pulling an all-nighter."}
+{"id": 36, "category": "hyperbole_neg", "expected": false, "text": "I could kill for a decent night of sleep."}
+{"id": 37, "category": "hyperbole_neg", "expected": false, "text": "Kill me now, the library closed early again."}
+{"id": 38, "category": "hyperbole_neg", "expected": false, "text": "I'm so dead, I forgot the assignment was due today."}
+{"id": 39, "category": "hyperbole_neg", "expected": false, "text": "This workload is soul-crushing."}
+{"id": 40, "category": "hyperbole_neg", "expected": false, "text": "I want to strangle my group partner.", "note": "Violence directed at another person, not self-harm. Out of scope for a self-harm rule; included because the verb overlaps the lexicon."}
+{"id": 41, "category": "hyperbole_neg", "expected": false, "text": "I'm drowning in deadlines."}
+{"id": 42, "category": "hyperbole_neg", "expected": false, "text": "My brain is fried, I'm basically a zombie."}
+{"id": 43, "category": "hyperbole_neg", "expected": false, "text": "This course is a slow death."}
+{"id": 44, "category": "hyperbole_neg", "expected": false, "text": "I'd sell my soul for a deadline extension."}
+{"id": 45, "category": "normal_stress_neg", "expected": false, "text": "I have been anxious about my GPA and sleeping badly."}
+{"id": 46, "category": "normal_stress_neg", "expected": false, "text": "Exam season always makes me irritable and tired."}
+{"id": 47, "category": "normal_stress_neg", "expected": false, "text": "I feel overwhelmed by how much reading there is."}
+{"id": 48, "category": "normal_stress_neg", "expected": false, "text": "I have been skipping meals because I am too busy."}
+{"id": 49, "category": "normal_stress_neg", "expected": false, "text": "I am worried I will disappoint my parents with these grades."}
+{"id": 50, "category": "normal_stress_neg", "expected": false, "text": "I feel lonely since my roommate moved out, but I am managing."}

@@ -94,3 +94,117 @@ class TestRunMocked:
         assert (tmp_path / "ablation.csv").exists()
         assert (tmp_path / "ablation.png").exists()
         assert "Interpretation" in (tmp_path / "ablation.md").read_text(encoding="utf-8")
+
+
+class TestSubsampleTestSplit:
+    """`--limit` trades statistical power for quota. It must not trade validity.
+
+    An ablation is a paired comparison, so every configuration has to see the
+    same items. The subsample therefore happens once before any config runs, is
+    seeded, and is stratified so no class is reduced to noise.
+    """
+
+    def _frame(self):
+        import pandas as pd
+
+        rows = []
+        for label, n in (("Low", 16), ("Moderate", 23), ("High", 22), ("Severe", 9)):
+            rows += [{"split": "test", "label": label, "text": f"{label}{i}"} for i in range(n)]
+        rows += [{"split": "train", "label": "Low", "text": f"tr{i}"} for i in range(30)]
+        return pd.DataFrame(rows)
+
+    def test_cuts_the_test_split_to_about_the_limit(self):
+        from app.eval.ablation import subsample_test_split
+
+        out = subsample_test_split(self._frame(), 35)
+        assert len(out[out["split"] == "test"]) == 35
+
+    def test_leaves_the_train_split_untouched(self):
+        from app.eval.ablation import subsample_test_split
+
+        df = self._frame()
+        out = subsample_test_split(df, 35)
+        assert len(out[out["split"] == "train"]) == len(df[df["split"] == "train"])
+
+    def test_every_class_survives(self):
+        """An unstratified cut can erase the smallest class entirely."""
+        from app.eval.ablation import subsample_test_split
+
+        out = subsample_test_split(self._frame(), 25)
+        test = out[out["split"] == "test"]
+        assert set(test["label"]) == {"Low", "Moderate", "High", "Severe"}
+
+    def test_is_deterministic_so_configs_see_identical_items(self):
+        from app.eval.ablation import subsample_test_split
+
+        df = self._frame()
+        first = subsample_test_split(df, 35).index.tolist()
+        second = subsample_test_split(df, 35).index.tolist()
+        assert first == second
+
+    def test_limit_at_or_above_the_split_size_is_a_no_op(self):
+        from app.eval.ablation import subsample_test_split
+
+        df = self._frame()
+        assert subsample_test_split(df, 70).equals(df)
+        assert subsample_test_split(df, 999).equals(df)
+
+
+class TestUnreportableResults:
+    """A run whose replies mostly failed must not be published as a number.
+
+    Real incident: a daily quota ran out mid-ablation, four configurations
+    returned 30/30 unparseable replies, every one fell back to a fixed label,
+    and the harness reported accuracy 0.333 — numerically identical to the
+    majority-class baseline and indistinguishable from a real result.
+    """
+
+    def _result(self, failures: int, n: int = 30):
+        from app.eval.baselines import SystemResult
+
+        return SystemResult(
+            system="full",
+            y_true=["Low"] * n,
+            y_pred=["Moderate"] * n,
+            notes={"parse_failures": failures},
+        )
+
+    def test_total_failure_is_refused(self):
+        assert self._result(30).unreportable_reason() is not None
+
+    def test_a_clean_run_is_reportable(self):
+        assert self._result(0).unreportable_reason() is None
+
+    def test_a_few_failures_are_tolerated_and_reported(self):
+        """Some noise is acceptable and is disclosed via notes, not suppressed."""
+        assert self._result(3).unreportable_reason() is None
+
+    def test_the_threshold_is_where_it_is_documented(self):
+        from app.eval.baselines import MAX_TOLERABLE_FAILURE_RATE
+
+        n = 30
+        just_over = int(n * MAX_TOLERABLE_FAILURE_RATE) + 1
+        just_under = int(n * MAX_TOLERABLE_FAILURE_RATE)
+        assert self._result(just_over, n).unreportable_reason() is not None
+        assert self._result(just_under, n).unreportable_reason() is None
+
+    def test_the_reason_names_the_cause(self):
+        """The message has to tell the reader why, not just that.
+
+        `_result` builds a parse-failure-only result, so the reason must name
+        the parser specifically. It deliberately no longer says "unparseable"
+        for every cause: a rate-limit refusal produces the same fallback label
+        but means the request never reached the model.
+        """
+        reason = self._result(30).unreportable_reason()
+        assert "parser rejected as malformed" in reason
+        assert "30/30" in reason
+
+    def test_systems_without_a_failure_count_are_unaffected(self):
+        """Offline baselines report no parse_failures and must stay reportable."""
+        from app.eval.baselines import SystemResult
+
+        result = SystemResult(
+            system="tfidf_lr", y_true=["Low"], y_pred=["Low"], notes={"train_size": 300}
+        )
+        assert result.unreportable_reason() is None

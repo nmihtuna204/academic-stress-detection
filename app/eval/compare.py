@@ -25,7 +25,9 @@ from app.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-ALL_SYSTEMS = ["tfidf_lr", "phobert_ft", "llm_zeroshot", "llm_full"]
+# Ordered floor-first: the majority baseline is the reference every other
+# system has to clear.
+ALL_SYSTEMS = ["majority", "tfidf_lr", "tfidf_svm", "phobert_ft", "llm_zeroshot", "llm_full"]
 
 STRESS_LEVELS = ["Low", "Moderate", "High", "Severe"]
 
@@ -75,12 +77,49 @@ def to_markdown_table(df: pd.DataFrame, dataset_name: str) -> str:
     return banner + df[cols].to_markdown(index=False) + "\n"
 
 
+def _merge_with_previous(table: pd.DataFrame, csv_path: Path, dataset_name: str) -> pd.DataFrame:
+    """Keep rows for systems this run did not evaluate.
+
+    `--systems tfidf_svm` used to overwrite the artifact with a single row,
+    silently discarding every result already computed, including LLM rows that
+    cost real API quota to produce. A partial run must extend the table, not
+    replace it. Rows for systems that WERE re-run are replaced, so a fresh
+    number always wins over a stale one, and only rows from the same dataset are
+    carried over.
+    """
+    if not csv_path.exists():
+        return table
+    try:
+        previous = pd.read_csv(csv_path)
+    except Exception as exc:  # noqa: BLE001 - a corrupt artifact must not stop a run
+        logger.warning("Could not read %s, writing fresh: %s", csv_path, exc)
+        return table
+
+    if "system" not in previous.columns:
+        return table
+    if "dataset" in previous.columns:
+        previous = previous[previous["dataset"] == dataset_name]
+
+    kept = previous[~previous["system"].isin(set(table["system"]))]
+    if kept.empty:
+        return table
+
+    merged = pd.concat([table, kept], ignore_index=True)
+    print(f"Merged {len(kept)} previously computed system(s): {', '.join(kept['system'])}")
+
+    order = {name: i for i, name in enumerate(ALL_SYSTEMS)}
+    merged["_order"] = merged["system"].map(lambda s: order.get(s, len(order)))
+    return merged.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+
+
 def run(dataset_name: str, systems: list[str], out_dir: Path | None = None) -> pd.DataFrame:
     from app.eval.baselines import (
         run_llm_full,
         run_llm_zeroshot,
+        run_majority,
         run_phobert_ft,
         run_tfidf_lr,
+        run_tfidf_svm,
     )
     from app.eval.datasets import load_eval_dataset
     from app.eval.evaluate import plot_confusion_matrix
@@ -103,8 +142,12 @@ def run(dataset_name: str, systems: list[str], out_dir: Path | None = None) -> p
             skipped.append((system, reason))
             continue
         try:
-            if system == "tfidf_lr":
+            if system == "majority":
+                result = run_majority(df)
+            elif system == "tfidf_lr":
                 result = run_tfidf_lr(df)
+            elif system == "tfidf_svm":
+                result = run_tfidf_svm(df)
             elif system == "phobert_ft":
                 result = run_phobert_ft(df)
             elif system == "llm_zeroshot":
@@ -118,6 +161,12 @@ def run(dataset_name: str, systems: list[str], out_dir: Path | None = None) -> p
             skipped.append((system, f"{type(exc).__name__}: {exc}"))
             continue
 
+        unreportable = result.unreportable_reason()
+        if unreportable:
+            print(f"SKIPPED {system}: {unreportable}")
+            skipped.append((system, unreportable))
+            continue
+
         row, metrics = metrics_row(result)
         rows.append(row)
         plot_confusion_matrix(metrics["confusion_matrix"], out / f"confusion_{system}.png")
@@ -127,6 +176,7 @@ def run(dataset_name: str, systems: list[str], out_dir: Path | None = None) -> p
     table = pd.DataFrame(rows)
     if not table.empty:
         table.insert(0, "dataset", dataset_name)
+        table = _merge_with_previous(table, out / "comparison.csv", dataset_name)
         table.to_csv(out / "comparison.csv", index=False)
     markdown = to_markdown_table(table, dataset_name) if not table.empty else ""
     if skipped:

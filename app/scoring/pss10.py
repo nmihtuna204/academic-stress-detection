@@ -20,24 +20,25 @@ _CATEGORY_THRESHOLDS: list[tuple[int, str]] = [
 ]
 
 PSS10_QUESTIONS: list[dict[str, object]] = [
-    {"id": 1, "reverse": False, "text": "How often have you been upset because of something that happened unexpectedly?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy khó chịu, bực bội vì một điều gì đó xảy ra ngoài dự tính không?"},
-    {"id": 2, "reverse": False, "text": "How often have you felt that you were unable to control the important things in your life?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy không thể kiểm soát được những điều quan trọng trong cuộc sống của mình không?"},
-    {"id": 3, "reverse": False, "text": "How often have you felt nervous and stressed?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy căng thẳng và bồn chồn, lo lắng không?"},
-    {"id": 4, "reverse": True, "text": "How often have you felt confident about your ability to handle your personal problems?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy tự tin vào khả năng xử lý các vấn đề cá nhân của mình không?"},
-    {"id": 5, "reverse": True, "text": "How often have you felt that things were going your way?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy mọi việc diễn ra theo ý mình không?"},
-    {"id": 6, "reverse": False, "text": "How often have you found that you could not cope with all the things that you had to do?", "text_vi": "Trong tháng qua, bạn có thường nhận thấy mình không thể ứng phó, giải quyết hết mọi việc phải làm không?"},
-    {"id": 7, "reverse": True, "text": "How often have you been able to control irritations in your life?", "text_vi": "Trong tháng qua, bạn có thường kiểm soát được những điều gây khó chịu trong cuộc sống của mình không?"},
-    {"id": 8, "reverse": True, "text": "How often have you felt that you were on top of things?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy mình làm chủ được tình hình, mọi việc trong tầm tay không?"},
-    {"id": 9, "reverse": False, "text": "How often have you been angered because of things that were outside of your control?", "text_vi": "Trong tháng qua, bạn có thường tức giận vì những việc nằm ngoài tầm kiểm soát của mình không?"},
-    {"id": 10, "reverse": False, "text": "How often have you felt difficulties were piling up so high that you could not overcome them?", "text_vi": "Trong tháng qua, bạn có thường cảm thấy khó khăn chồng chất đến mức không thể vượt qua nổi không?"},
+    {"id": 1, "reverse": False, "text": "How often have you been upset because of something that happened unexpectedly?"},
+    {"id": 2, "reverse": False, "text": "How often have you felt that you were unable to control the important things in your life?"},
+    {"id": 3, "reverse": False, "text": "How often have you felt nervous and stressed?"},
+    {"id": 4, "reverse": True, "text": "How often have you felt confident about your ability to handle your personal problems?"},
+    {"id": 5, "reverse": True, "text": "How often have you felt that things were going your way?"},
+    {"id": 6, "reverse": False, "text": "How often have you found that you could not cope with all the things that you had to do?"},
+    {"id": 7, "reverse": True, "text": "How often have you been able to control irritations in your life?"},
+    {"id": 8, "reverse": True, "text": "How often have you felt that you were on top of things?"},
+    {"id": 9, "reverse": False, "text": "How often have you been angered because of things that were outside of your control?"},
+    {"id": 10, "reverse": False, "text": "How often have you felt difficulties were piling up so high that you could not overcome them?"},
 ]
 
-ANSWER_CHOICES_VI: dict[int, str] = {
-    0: "Không bao giờ",
-    1: "Hầu như không bao giờ",
-    2: "Thỉnh thoảng",
-    3: "Khá thường xuyên",
-    4: "Rất thường xuyên",
+# Official PSS-10 response anchors (past month).
+ANSWER_CHOICES: dict[int, str] = {
+    0: "Never",
+    1: "Almost never",
+    2: "Sometimes",
+    3: "Fairly often",
+    4: "Very often",
 }
 
 

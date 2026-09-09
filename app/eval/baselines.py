@@ -28,6 +28,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -45,8 +46,19 @@ STRESS_LEVELS = ["Low", "Moderate", "High", "Severe"]
 
 DEFAULT_CACHE_DIR = PROJECT_ROOT / "data" / "eval" / "llm_cache"
 
-# Concurrent in-flight LLM requests.
+# Concurrent in-flight LLM requests. Overridden by Settings.llm_concurrency so a
+# rate-limited free tier can be throttled without editing code; this constant is
+# the fallback when settings are unavailable.
 LLM_CONCURRENCY = 4
+
+
+# Above this share of unparseable replies, the "predictions" are mostly the
+# fallback label and the metrics describe that constant, not the system. Chosen
+# after a real incident: a daily quota ran out mid-run, four ablation
+# configurations returned 30/30 failures, and the harness reported them as
+# accuracy 0.333 - numerically identical to the majority-class baseline and
+# indistinguishable from a genuine result to anyone reading the table.
+MAX_TOLERABLE_FAILURE_RATE = 0.2
 
 
 @dataclass
@@ -55,6 +67,43 @@ class SystemResult:
     y_true: list[str]
     y_pred: list[str]
     notes: dict = field(default_factory=dict)
+
+    def unreportable_reason(self) -> str | None:
+        """Why this result must not be published as a number, or None if it may be.
+
+        Returning a reason rather than raising lets the caller record the system
+        as "not run", which is the honest artifact, instead of either crashing or
+        printing a fabricated score.
+        """
+        parse_failures = self.notes.get("parse_failures") or 0
+        rate_limited = self.notes.get("rate_limited") or 0
+        call_failures = self.notes.get("call_failures") or 0
+        # A system predating the split counts reports only parse_failures.
+        failures = self.notes.get("unusable") or (parse_failures + rate_limited + call_failures)
+        n = len(self.y_pred)
+        if not failures or not n:
+            return None
+        rate = failures / n
+        if rate <= MAX_TOLERABLE_FAILURE_RATE:
+            return None
+
+        # Name the dominant cause. "Unparseable" is a claim about the model;
+        # a 429 is a claim about the account, and conflating them has already
+        # put a wrong sentence in the report.
+        if rate_limited >= max(parse_failures, call_failures):
+            cause = (
+                f"{rate_limited} of them were provider rate-limit refusals (HTTP 429), so those "
+                "requests never reached the model and nothing about its behaviour was measured"
+            )
+        elif parse_failures >= call_failures:
+            cause = f"{parse_failures} of them were replies the parser rejected as malformed"
+        else:
+            cause = f"{call_failures} of them were other call failures"
+        return (
+            f"{failures}/{n} replies ({rate:.0%}) produced no usable prediction and fell back "
+            f"to a fixed label, above the {MAX_TOLERABLE_FAILURE_RATE:.0%} threshold; the "
+            f"metrics would describe the fallback, not the system. {cause}."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +135,69 @@ def run_tfidf_lr(df: pd.DataFrame, seed: int = 42) -> SystemResult:
         system="tfidf_lr",
         y_true=test["label"].tolist(),
         y_pred=y_pred,
+        notes={"train_size": len(train), "test_size": len(test)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# majority
+# ---------------------------------------------------------------------------
+
+
+def run_majority(df: pd.DataFrame) -> SystemResult:
+    """Always predict the most frequent training label.
+
+    The floor every other system has to clear. Without it, an accuracy figure has
+    no reference point: on a skewed four-class split, a system can look
+    respectable while doing nothing a constant predictor could not. Needs no
+    model and no API call, so there is no reason for it to be missing.
+    """
+    train = df[df["split"] == "train"]
+    test = df[df["split"] == "test"]
+    majority = train["label"].value_counts().idxmax()
+
+    return SystemResult(
+        system="majority",
+        y_true=test["label"].tolist(),
+        y_pred=[majority] * len(test),
+        notes={
+            "majority_label": majority,
+            "train_size": len(train),
+            "test_size": len(test),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# tfidf_svm
+# ---------------------------------------------------------------------------
+
+
+def run_tfidf_svm(df: pd.DataFrame, seed: int = 42) -> SystemResult:
+    """TF-IDF with a linear support-vector classifier.
+
+    The second classical comparator. Same features as `tfidf_lr`, different
+    decision rule, so a gap between the two is attributable to the classifier
+    rather than to the representation. Also offline.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.pipeline import Pipeline
+    from sklearn.svm import LinearSVC
+
+    train = df[df["split"] == "train"]
+    test = df[df["split"] == "test"]
+
+    pipeline = Pipeline(
+        [
+            ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True)),
+            ("clf", LinearSVC(C=1.0, class_weight="balanced", random_state=seed)),
+        ]
+    )
+    pipeline.fit(train["text"], train["label"])
+    return SystemResult(
+        system="tfidf_svm",
+        y_true=test["label"].tolist(),
+        y_pred=pipeline.predict(test["text"]).tolist(),
         notes={"train_size": len(train), "test_size": len(test)},
     )
 
@@ -128,6 +240,31 @@ def run_phobert_ft(df: pd.DataFrame) -> SystemResult:
 # ---------------------------------------------------------------------------
 
 
+# Evaluation runs at temperature 0, unlike the deployed app which uses the
+# configured value. Two reasons, both discovered by measurement: a thesis result
+# has to be reproducible, and the first run at temperature 0.2 produced 7 badly
+# formed JSON replies out of 70 (a real one: `"confidence": 0. nine`) against 0
+# at temperature 0. Each failure becomes a fallback label, so sampling noise was
+# depressing the score of the system under test.
+EVAL_TEMPERATURE = 0.0
+
+
+@lru_cache(maxsize=1)
+def _eval_llm():
+    """Temperature-0 client shared by every llm_full evaluation call."""
+    from langchain_openai import ChatOpenAI
+
+    settings = get_settings()
+    return ChatOpenAI(
+        model=settings.openai_model,
+        temperature=EVAL_TEMPERATURE,
+        timeout=settings.llm_timeout_seconds,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url or None,
+        max_retries=settings.llm_max_retries,
+    )
+
+
 def _cache_key(payload: dict) -> str:
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -145,6 +282,57 @@ def cache_put(cache_dir: Path, key: str, value: dict) -> None:
     (cache_dir / f"{key}.json").write_text(
         json.dumps(value, ensure_ascii=False, indent=1), encoding="utf-8"
     )
+
+
+def _classify_failure(exc: Exception) -> str:
+    """Separate "the model wrote bad JSON" from "the request never landed".
+
+    Both end in the same fallback label, but they mean opposite things about the
+    system: one is a model-behaviour result worth reporting, the other says the
+    provider refused and nothing was measured. The 2026-09-08 run recorded 32
+    failures of which 31 were HTTP 429 and exactly one was malformed JSON, so
+    calling the whole set "unparseable" - as the earlier run's notes did, and as
+    the report still says - misstates what happened.
+    """
+    from langchain_core.exceptions import OutputParserException
+
+    if isinstance(exc, OutputParserException):
+        return "parse_error"
+    name = type(exc).__name__
+    if "RateLimit" in name or "429" in str(exc)[:200]:
+        # The body of a 429 is the only place the provider states the DAILY
+        # token allowance - no response header carries it. Capture it here so
+        # the next pre-flight can report real headroom instead of inferring it
+        # from a probe small enough to fit through any remaining gap.
+        from app.eval.quota import record_from_error
+
+        record_from_error(exc)
+        return "rate_limited"
+    return "call_error"
+
+
+def _record_parse_failure(cache_dir: Path, key: str, system: str, exc: Exception) -> None:
+    """Persist one unparseable reply so the failure can be diagnosed later.
+
+    Written beside the cache rather than into it, so a failure is never served
+    back as though it were a result. Same privacy footing as the cache itself:
+    on `--dataset synthetic` the content is generated text, and on
+    `--dataset real` it is subject to the same handling as the cached
+    reasoning strings that already live in this directory.
+    """
+    failure_dir = cache_dir / "_parse_failures"
+    try:
+        failure_dir.mkdir(parents=True, exist_ok=True)
+        (failure_dir / f"{key}.json").write_text(
+            json.dumps(
+                {"system": system, "error_type": type(exc).__name__, "error": str(exc)[:4000]},
+                ensure_ascii=False,
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+    except OSError as write_exc:  # diagnostics must never break a run
+        logger.warning("could not record parse failure: %s", write_exc)
 
 
 def _parse_label_json(raw: str) -> tuple[str | None, float | None]:
@@ -169,18 +357,25 @@ def _parse_label_json(raw: str) -> tuple[str | None, float | None]:
 # llm_zeroshot
 # ---------------------------------------------------------------------------
 
-ZEROSHOT_SYSTEM_VI = """\
-Bạn là công cụ phân loại mức độ căng thẳng học đường của sinh viên Việt Nam.
-Chỉ dựa vào đoạn chia sẻ được đưa, hãy phân loại mức độ căng thẳng vào đúng một
-trong bốn mức: Low, Moderate, High, Severe.
-Trả về DUY NHẤT một JSON hợp lệ dạng: {"label": "<Low|Moderate|High|Severe>", "confidence": <0..1>}
-Không thêm bất kỳ văn bản nào khác."""
+ZEROSHOT_SYSTEM = """\
+You are a classifier for academic stress levels in university students.
+Based only on the passage provided, classify the stress level into exactly one
+of four levels: Low, Moderate, High, Severe.
+Return ONLY a single valid JSON object of the form: {"label": "<Low|Moderate|High|Severe>", "confidence": <0..1>}
+Do not add any other text."""
 
 
 async def _zeroshot_one(llm, semaphore: asyncio.Semaphore, text: str, cache_dir: Path) -> tuple[str, bool]:
     """Classify one text; returns (label, parse_ok). Cache-first."""
     settings = get_settings()
-    key = _cache_key({"system": "llm_zeroshot", "model": settings.openai_model, "text": text})
+    key = _cache_key(
+        {
+            "system": "llm_zeroshot",
+            "model": settings.openai_model,
+            "endpoint": settings.openai_base_url,
+            "text": text,
+        }
+    )
     cached = cache_get(cache_dir, key)
     if cached is not None:
         return cached["label"], cached.get("parse_ok", True)
@@ -188,7 +383,7 @@ async def _zeroshot_one(llm, semaphore: asyncio.Semaphore, text: str, cache_dir:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     async with semaphore:
-        reply = await llm.ainvoke([SystemMessage(content=ZEROSHOT_SYSTEM_VI), HumanMessage(content=text)])
+        reply = await llm.ainvoke([SystemMessage(content=ZEROSHOT_SYSTEM), HumanMessage(content=text)])
     label, _confidence = _parse_label_json(reply.content)
     parse_ok = label is not None
     if label is None:
@@ -208,9 +403,11 @@ async def run_llm_zeroshot(df: pd.DataFrame, cache_dir: Path = DEFAULT_CACHE_DIR
         temperature=0.0,
         timeout=settings.llm_timeout_seconds,
         api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url or None,
+        max_retries=settings.llm_max_retries,
     )
     test = df[df["split"] == "test"]
-    semaphore = asyncio.Semaphore(LLM_CONCURRENCY)
+    semaphore = asyncio.Semaphore(settings.llm_concurrency)
     outcomes = await asyncio.gather(
         *[_zeroshot_one(llm, semaphore, text, cache_dir) for text in test["text"]]
     )
@@ -239,6 +436,7 @@ async def _full_one(
     cache_tag: str = "llm_full",
 ) -> tuple[str, bool]:
     """Run the proposed pipeline for one row (ablation-configurable)."""
+    from app.api.services import build_rag_query
     from app.llm.chain import assess
     from app.nlp.emotion import analyze
     from app.rag.retriever import retrieve
@@ -256,6 +454,12 @@ async def _full_one(
         {
             "system": cache_tag,
             "model": settings.openai_model,
+            "endpoint": settings.openai_base_url,
+            "temperature": EVAL_TEMPERATURE,
+            # The key hashes inputs, not the retrieved passages, so a change to
+            # the query construction is invisible to it. Bump this whenever the
+            # retrieval path changes or the cache serves pre-change answers.
+            "query_shape": "v2-build_rag_query",
             "text": text,
             "use_rag": use_rag,
             "use_questionnaire": use_questionnaire,
@@ -266,25 +470,47 @@ async def _full_one(
     )
     cached = cache_get(cache_dir, key)
     if cached is not None:
-        return cached["label"], True
+        return cached["label"], "ok"
 
     emotion = analyze(text) if use_emotion else None
     docs = []
     if use_rag:
-        query_parts = [text[:300]]
-        if emotion and emotion.stress_keywords:
-            query_parts.insert(0, " ".join(emotion.stress_keywords))
-        docs = retrieve(" ".join(query_parts), k=4)
+        # Must be the *production* query, not a local approximation of it. This
+        # path previously hand-rolled the query with the keywords prepended,
+        # which is the reverse of the shape build_rag_query() was measured into
+        # (RESULTS.md 4b) and produced a different top-4 chunk set on 53 % of
+        # dataset items - so the number reported for the proposed system came
+        # from a retrieval path the deployed system never runs.
+        docs = retrieve(build_rag_query(text, emotion, None), k=4)
 
     async with semaphore:
-        assessment = await assess(
-            raw_text=text,
-            emotion=emotion,
-            dass_result=dass_result,
-            pss_result=pss_result,
-            stress_context=None,
-            retrieved_docs=docs,
-        )
+        try:
+            assessment = await assess(
+                raw_text=text,
+                emotion=emotion,
+                dass_result=dass_result,
+                pss_result=pss_result,
+                stress_context=None,
+                retrieved_docs=docs,
+                llm=_eval_llm(),
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad reply must not end the run
+            # Weaker models occasionally emit malformed JSON (a real example:
+            # `"confidence": 0. nine`). Treat it the same way the zero-shot path
+            # does: fall back to a deterministic label, count it, and carry on.
+            # Aborting would discard 69 good predictions because of one bad one.
+            #
+            # Record it. The 2026-09-08 run reported 7/70 parse failures and
+            # then discarded the evidence, because this branch returned without
+            # writing anything - leaving no way to tell a malformed number from
+            # a wrapper the parser could have been taught to strip. The reply
+            # text travels inside the exception, so persisting the exception is
+            # enough to make the next run's failures diagnosable.
+            _record_parse_failure(cache_dir, key, cache_tag, exc)
+            kind = _classify_failure(exc)
+            logger.warning("llm_full %s, using fallback label: %s", kind, exc)
+            return "Moderate", kind
+
     label = assessment.predicted_level.value
     cache_put(
         cache_dir,
@@ -292,12 +518,12 @@ async def _full_one(
         {
             "label": label,
             "confidence": assessment.confidence,
-            "reasoning_vi": assessment.reasoning_vi,
-            "suggestions_vi": assessment.suggestions_vi,
+            "reasoning": assessment.reasoning,
+            "suggestions": assessment.suggestions,
             "risk_flags": assessment.risk_flags,
         },
     )
-    return label, True
+    return label, "ok"
 
 
 async def run_llm_full(
@@ -319,7 +545,7 @@ async def run_llm_full(
         raise RuntimeError("dataset lacks per-item DASS/PSS answers required by llm_full")
 
     test = df[df["split"] == "test"]
-    semaphore = asyncio.Semaphore(LLM_CONCURRENCY)
+    semaphore = asyncio.Semaphore(get_settings().llm_concurrency)
     cache_tag = f"llm_full:{int(use_rag)}{int(use_questionnaire)}{int(use_emotion)}"
     outcomes = await asyncio.gather(
         *[
@@ -335,12 +561,31 @@ async def run_llm_full(
             for _, row in test.iterrows()
         ]
     )
+    # Reported, not hidden: each failure contributed a fallback "Moderate" rather
+    # than a prediction, so a large count makes the metrics meaningless and the
+    # reader has to be able to see that.
+    kinds = [kind for _, kind in outcomes]
+    parse_failures = sum(1 for k in kinds if k == "parse_error")
+    rate_limited = sum(1 for k in kinds if k == "rate_limited")
+    call_failures = sum(1 for k in kinds if k == "call_error")
+    unusable = parse_failures + rate_limited + call_failures
+    if unusable:
+        logger.warning(
+            "%s: %d/%d responses unusable and fell back to 'Moderate' "
+            "(%d malformed JSON, %d rate-limited, %d other call errors)",
+            system_id, unusable, len(test), parse_failures, rate_limited, call_failures,
+        )
+
     return SystemResult(
         system=system_id,
         y_true=test["label"].tolist(),
         y_pred=[label for label, _ in outcomes],
         notes={
             "test_size": len(test),
+            "parse_failures": parse_failures,
+            "rate_limited": rate_limited,
+            "call_failures": call_failures,
+            "unusable": unusable,
             "use_rag": use_rag,
             "use_questionnaire": use_questionnaire,
             "use_emotion": use_emotion,

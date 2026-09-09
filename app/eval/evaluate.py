@@ -22,7 +22,6 @@ from app.db.database import get_session, init_db
 from app.db.models import Prediction
 
 STRESS_LEVELS = ["Low", "Moderate", "High", "Severe"]
-LEVEL_LABELS_VI = {"Low": "Thấp", "Moderate": "Trung bình", "High": "Cao", "Severe": "Rất cao"}
 
 
 def load_label_pairs() -> tuple[list[str], list[str]]:
@@ -53,11 +52,20 @@ def compute_metrics(y_true: list[str], y_pred: list[str]) -> dict:
         f1_score,
     )
 
+    # How often the model's label differs from the validated instrument's. The
+    # UI defers to the instrument for the headline (see the fusion rule in
+    # 5_Results.py), so this is the rate at which that rule actually bites, and
+    # it is the number §5.4 needs to report about the disagreement.
+    disagreements = sum(1 for t, p in zip(y_true, y_pred) if t != p)
+    n = len(y_true)
+
     return {
-        "n_samples": len(y_true),
+        "n_samples": n,
         "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
         "macro_f1": round(float(f1_score(y_true, y_pred, labels=STRESS_LEVELS, average="macro", zero_division=0)), 4),
         "cohen_kappa": round(float(cohen_kappa_score(y_true, y_pred, labels=STRESS_LEVELS)), 4),
+        "disagreement_rate": round(disagreements / n, 4) if n else 0.0,
+        "n_disagreements": disagreements,
         "per_class": classification_report(
             y_true, y_pred, labels=STRESS_LEVELS, output_dict=True, zero_division=0
         ),
@@ -76,7 +84,7 @@ def plot_confusion_matrix(matrix: list[list[int]], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
     im = ax.imshow(data, cmap="Blues")
 
-    tick_labels = [f"{lv}\n({LEVEL_LABELS_VI[lv]})" for lv in STRESS_LEVELS]
+    tick_labels = list(STRESS_LEVELS)
     ax.set_xticks(range(len(STRESS_LEVELS)), tick_labels)
     ax.set_yticks(range(len(STRESS_LEVELS)), tick_labels)
     ax.set_xlabel("LLM predicted label")

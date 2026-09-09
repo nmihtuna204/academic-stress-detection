@@ -18,11 +18,11 @@ QUESTION_COLS = [f"q{i}" for i in range(1, 11)]
 
 # Grade bands per Bangor et al. (2008) / Sauro & Lewis curved grading.
 GRADE_BANDS = [
-    (84.1, "A (Xuất sắc)"),
-    (72.6, "B (Tốt)"),
-    (62.7, "C (Khá)"),
-    (51.7, "D (Kém)"),
-    (0.0, "F (Rất kém)"),
+    (84.1, "A (Excellent)"),
+    (72.6, "B (Good)"),
+    (62.7, "C (Fair)"),
+    (51.7, "D (Poor)"),
+    (0.0, "F (Very poor)"),
 ]
 
 

@@ -32,7 +32,7 @@ class TestStructure:
         assert SUBSCALE_ITEMS["stress"] == [1, 6, 8, 11, 12, 14, 18]
 
     def test_vietnamese_text_present(self):
-        assert all(q["text_vi"] for q in DASS21_QUESTIONS)
+        assert all(q["text"] for q in DASS21_QUESTIONS)
 
 
 class TestScoring:

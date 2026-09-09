@@ -22,8 +22,14 @@ from app.scoring import derive_ground_truth, score_dass21, score_pss10
 
 STRESS_LEVELS = ["Low", "Moderate", "High", "Severe"]
 
-MAJORS = ["Công nghệ thông tin", "Kinh tế", "Y khoa", "Kỹ thuật", "Ngôn ngữ Anh", "Sư phạm", "Luật"]
-UNIVERSITIES = ["ĐH Bách Khoa", "ĐH Kinh tế Quốc dân", "ĐH Quốc gia", "ĐH Sư phạm", "ĐH Y Dược"]
+MAJORS = ["Information Technology", "Economics", "Medicine", "Engineering", "English Studies", "Education", "Law"]
+UNIVERSITIES = [
+    "Bach Khoa University",
+    "National Economics University",
+    "Vietnam National University",
+    "University of Education",
+    "University of Medicine and Pharmacy",
+]
 
 
 def _likert(rng: random.Random, theta: float, max_value: int) -> int:
@@ -83,7 +89,7 @@ def seed_database(rows: int = 200, seed: int = 42, agreement: float = 0.72) -> i
             record = generate_student(rng)
             user = User(
                 age=rng.randint(18, 25),
-                gender=rng.choices(["Nữ", "Nam", "Khác"], weights=[52, 45, 3])[0],
+                gender=rng.choices(["Female", "Male", "Other"], weights=[52, 45, 3])[0],
                 year_of_study=rng.randint(1, 5),
                 major=rng.choice(MAJORS),
                 university=rng.choice(UNIVERSITIES),

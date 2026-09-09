@@ -31,7 +31,7 @@ def _get_embedding_function():
 
         fn = SentenceTransformerEmbeddingFunction(model_name=MULTILINGUAL_EMBEDDING_MODEL)
         # Force a tiny embed now so failures surface here, not mid-request.
-        fn(["kiểm tra"])
+        fn(["health check"])
         logger.info("Using multilingual sentence-transformers embeddings")
         return fn
     except Exception as exc:

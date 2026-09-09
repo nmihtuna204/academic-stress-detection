@@ -24,7 +24,7 @@ services:
 
   ui:
     build: .
-    command: streamlit run streamlit_app/Trang_Chu.py --server.address 0.0.0.0 --server.port 8501
+    command: streamlit run streamlit_app/Home.py --server.address 0.0.0.0 --server.port 8501
     ports:
       - "8501:8501"
     environment:

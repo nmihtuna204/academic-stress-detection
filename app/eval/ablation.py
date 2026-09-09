@@ -104,7 +104,42 @@ def plot(table: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
 
 
-def run(dataset_name: str, configs: list[str], out_dir: Path | None = None) -> pd.DataFrame:
+def subsample_test_split(df: pd.DataFrame, limit: int, seed: int = 42) -> pd.DataFrame:
+    """Cut the test split to `limit` rows, stratified by label, deterministically.
+
+    An ablation is a paired comparison: every configuration must see the SAME
+    items, or the differences between configurations stop being attributable to
+    the configuration. Subsampling therefore happens once, here, before any
+    configuration runs, and is seeded so a re-run reproduces it.
+
+    Stratifying matters at these sizes. The test split is Low 16 / Moderate 23 /
+    High 22 / Severe 9; an unstratified cut to 35 could easily leave 2 Severe
+    items, and a per-class F1 computed on 2 items is noise.
+
+    Rows outside the test split are untouched: `run_llm_full` only evaluates
+    test rows, but the train rows must stay for anything that fits on them.
+    """
+    test = df[df["split"] == "test"]
+    if limit >= len(test):
+        return df
+
+    share = limit / len(test)
+    kept: list = []
+    for _label, group in test.groupby("label", sort=True):
+        # At least one row per class, so no class silently disappears.
+        n = max(1, round(len(group) * share))
+        kept.extend(group.sample(n=min(n, len(group)), random_state=seed).index)
+
+    dropped = test.index.difference(pd.Index(kept))
+    return df.drop(index=dropped)
+
+
+def run(
+    dataset_name: str,
+    configs: list[str],
+    out_dir: Path | None = None,
+    limit: int | None = None,
+) -> pd.DataFrame:
     from app.eval.baselines import run_llm_full
     from app.eval.compare import _openai_key_available, metrics_row
     from app.eval.datasets import load_eval_dataset
@@ -123,7 +158,21 @@ def run(dataset_name: str, configs: list[str], out_dir: Path | None = None) -> p
         return pd.DataFrame()
 
     df = load_eval_dataset(dataset_name, out_dir=out)
+
+    n_full = int((df["split"] == "test").sum())
+    n_used = n_full
+    if limit is not None:
+        df = subsample_test_split(df, limit)
+        n_used = int((df["split"] == "test").sum())
+        if n_used < n_full:
+            print(
+                f"Subsampled test split: {n_used}/{n_full} items, stratified, seed 42. "
+                "Report this alongside the numbers - the comparison stays paired, but "
+                "every per-class figure rests on fewer items."
+            )
+
     rows = []
+    unreported: list[tuple[str, str]] = []
     for config in configs:
         use_rag, use_questionnaire, use_emotion = CONFIGS[config]
         print(f"\n=== Ablation config: {config} ===")
@@ -136,12 +185,46 @@ def run(dataset_name: str, configs: list[str], out_dir: Path | None = None) -> p
                 system_id=config,
             )
         )
+        unreportable = result.unreportable_reason()
+        if unreportable:
+            print(f"NOT REPORTED {config}: {unreportable}")
+            unreported.append((config, unreportable))
+            continue
+
         row, _metrics = metrics_row(result)
         row["config"] = config
         rows.append(row)
         print(f"{config}: acc={row['accuracy']:.3f} macro_f1={row['macro_f1']:.3f}")
 
     table = pd.DataFrame(rows)
+
+    banner = (
+        f"# Ablation study — dataset: `{dataset_name}`\n\n"
+        + ("> **Computed on SYNTHETIC data.**\n\n" if dataset_name == "synthetic" else "")
+    )
+    if limit is not None and n_used < n_full:
+        banner += (
+            f"> Evaluated on a stratified {n_used}/{n_full}-item subsample of the test "
+            "split (seed 42), identical across configurations. Quote the sample size "
+            "wherever these figures appear.\n\n"
+        )
+
+    def _not_reported_section() -> str:
+        if not unreported:
+            return ""
+        text = "\n**Not reported** (the run produced no usable predictions):\n\n"
+        for config, reason in unreported:
+            text += f"- `{config}` — {reason}\n"
+        return text
+
+    # Every configuration failed the reportability check: write the explanation
+    # rather than an empty table, and leave any earlier artifact untouched below.
+    if table.empty:
+        markdown = banner + "No configuration produced reportable results.\n" + _not_reported_section()
+        (out / "ablation.md").write_text(markdown, encoding="utf-8")
+        print("\n" + markdown)
+        return table
+
     # Deltas vs the full configuration.
     if "full" in set(table["config"]):
         full_row = table[table["config"] == "full"].iloc[0]
@@ -152,11 +235,14 @@ def run(dataset_name: str, configs: list[str], out_dir: Path | None = None) -> p
     table = table[display_cols + [c for c in table.columns if c not in display_cols]]
     table.to_csv(out / "ablation.csv", index=False)
 
-    banner = (
-        f"# Ablation study — dataset: `{dataset_name}`\n\n"
-        + ("> **Computed on SYNTHETIC data.**\n\n" if dataset_name == "synthetic" else "")
+    markdown = (
+        banner
+        + table[display_cols].to_markdown(index=False)
+        + "\n\n"
+        + interpret(table)
+        + "\n"
+        + _not_reported_section()
     )
-    markdown = banner + table[display_cols].to_markdown(index=False) + "\n\n" + interpret(table) + "\n"
     (out / "ablation.md").write_text(markdown, encoding="utf-8")
     plot(table, out / "ablation.png")
     print("\n" + markdown)
@@ -168,13 +254,23 @@ def main() -> None:
     parser.add_argument("--dataset", choices=["synthetic", "real"], default="synthetic")
     parser.add_argument("--configs", nargs="+", choices=list(CONFIGS), default=list(CONFIGS))
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=(
+            "Evaluate only N test items (stratified, seed 42, identical across "
+            "configs). Halves the token cost at the price of wider error bars; "
+            "must be disclosed wherever the numbers are reported."
+        ),
+    )
     parser.add_argument("--online-hub", action="store_true")
     args = parser.parse_args()
 
     if not args.online_hub:
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
     logging.basicConfig(level=logging.WARNING)
-    run(args.dataset, args.configs, Path(args.out) if args.out else None)
+    run(args.dataset, args.configs, Path(args.out) if args.out else None, limit=args.limit)
 
 
 if __name__ == "__main__":

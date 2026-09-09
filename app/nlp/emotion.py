@@ -1,9 +1,16 @@
-"""Vietnamese emotion analysis for free-text stress input.
+"""Emotion analysis for free-text stress input.
 
 Model strategy (each layer degrades gracefully if unavailable):
 1. Local fine-tuned PhoBERT stress classifier (`models/phobert-stress`,
    3-class Low/Moderate/High) - the primary signal. Fully offline.
 2. Lexicon-only analysis (always available, offline).
+
+LANGUAGE CAVEAT: PhoBERT is a Vietnamese-only encoder fine-tuned on Vietnamese
+student text, so its stress prediction is only meaningful for Vietnamese input.
+English input still works, but it falls through to the bilingual lexicon path
+(`model_stress_level=None`), which `_derive_polarity` and `analyze` already
+handle. Making the model layer work in English would require fine-tuning an
+English encoder on labelled English data - a modelling task, not a translation.
 
 Sentiment polarity is DERIVED from the stress prediction and the keyword
 lexicon rather than a separate sentiment model: a dedicated hub-downloaded
@@ -53,8 +60,10 @@ def detect_language(text: str) -> Language:
         return Language.VI
     if english_ratio > 0.2:
         return Language.EN
-    # No diacritics, no clear English signal: likely unaccented Vietnamese.
-    return Language.VI
+    # No diacritics and no clear English signal. The UI is English, so English is
+    # the better default here; unaccented Vietnamese is still caught by the
+    # diacritics branch above whenever the student types accents.
+    return Language.EN
 
 
 @lru_cache(maxsize=1)
@@ -125,7 +134,12 @@ def analyze(text: str) -> EmotionResult:
     emotion_scores: dict[str, float] = {}
     model_stress_level: StressLevel | None = None
 
-    stress_clf = _load_stress_classifier()
+    # PhoBERT is a Vietnamese-only encoder fine-tuned on Vietnamese student text.
+    # Run it only on input it can actually read: given English it still returns a
+    # confident-looking label, and surfacing that to a student as "stress level per
+    # the model" would be presenting noise as signal. Skipping it here drops through
+    # to the lexicon-only path handled below, which is the honest answer.
+    stress_clf = _load_stress_classifier() if language in (Language.VI, Language.MIXED) else None
     if stress_clf is not None:
         try:
             predictions = stress_clf(text)[0]

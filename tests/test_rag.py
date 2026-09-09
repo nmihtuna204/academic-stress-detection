@@ -25,16 +25,16 @@ def tmp_chroma(tmp_path, monkeypatch):
 
 class TestChunking:
     def test_split_by_headings_prepends_title(self):
-        md = "# Tiêu đề\n\nIntro.\n\n## Phần một\n\nNội dung 1.\n\n## Phần hai\n\nNội dung 2.\n"
+        md = "# Title\n\nIntro.\n\n## Section one\n\nBody 1.\n\n## Section two\n\nBody 2.\n"
         chunks = split_markdown(md, source="doc.md")
         assert len(chunks) == 2
-        assert all(c.text.startswith("Tiêu đề") for c in chunks)
-        assert chunks[0].heading == "Phần một"
-        assert chunks[1].heading == "Phần hai"
+        assert all(c.text.startswith("Title") for c in chunks)
+        assert chunks[0].heading == "Section one"
+        assert chunks[1].heading == "Section two"
 
     def test_oversized_section_is_split(self):
-        body = "\n\n".join(f"Đoạn văn số {i}. " + "x" * 300 for i in range(10))
-        md = f"# T\n\n## Dài\n\n{body}"
+        body = "\n\n".join(f"Paragraph number {i}. " + "x" * 300 for i in range(10))
+        md = f"# T\n\n## Long\n\n{body}"
         chunks = split_markdown(md, source="long.md")
         assert len(chunks) > 1
         assert all(len(c.text) < 2100 for c in chunks)
@@ -43,8 +43,8 @@ class TestChunking:
         chunks = load_knowledge_chunks()
         assert len(chunks) >= 15
         sources = {c.source for c in chunks}
-        assert "01_stress_hoc_duong.md" in sources
-        assert "03_nguon_ho_tro_vietnam.md" in sources
+        assert "01_academic_stress.md" in sources
+        assert "03_support_resources_vietnam.md" in sources
 
 
 @pytest.mark.requires_network
@@ -57,12 +57,12 @@ class TestIngestAndRetrieve:
         count = ingest()
         assert count >= 15
 
-        docs = retrieve("mất ngủ trước kỳ thi, ngủ không đủ giấc", k=3)
+        docs = retrieve("cannot sleep before exams, not getting enough rest", k=3)
         assert 1 <= len(docs) <= 3
         assert all(d.text for d in docs)
         assert all(d.source.endswith(".md") for d in docs)
         # The sleep-hygiene document should surface for a sleep query.
-        assert any("04_giac_ngu" in d.source or "ngủ" in d.text.lower() for d in docs)
+        assert any("04_sleep" in d.source or "sleep" in d.text.lower() for d in docs)
 
     def test_ingest_is_idempotent(self, tmp_chroma):
         from app.rag.store import get_collection

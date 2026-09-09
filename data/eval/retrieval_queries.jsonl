@@ -1,0 +1,57 @@
+{"id": 1, "style": "natural", "lang": "en", "query": "is it normal to feel stressed about university or is something wrong with me", "relevant": ["01_academic_stress.md::0"]}
+{"id": 2, "style": "natural", "lang": "en", "query": "does a little bit of stress actually help you study or is it always harmful", "relevant": ["01_academic_stress.md::0"]}
+{"id": 3, "style": "natural", "lang": "en", "query": "what are the usual things that make university students stressed", "relevant": ["01_academic_stress.md::1"]}
+{"id": 4, "style": "natural", "lang": "en", "query": "I am a first year and I cannot adapt to studying on my own away from home", "relevant": ["01_academic_stress.md::1"]}
+{"id": 5, "style": "natural", "lang": "en", "query": "how do I know whether my stress has been going on too long", "relevant": ["01_academic_stress.md::2"]}
+{"id": 6, "style": "natural", "lang": "en", "query": "lately I keep forgetting things and skipping classes, is that connected to stress", "relevant": ["01_academic_stress.md::2"]}
+{"id": 7, "style": "natural", "lang": "en", "query": "at what point should I actually go and see someone about how I feel", "relevant": ["01_academic_stress.md::3"]}
+{"id": 8, "style": "natural", "lang": "en", "query": "nothing has improved in three weeks and it is affecting my classes", "relevant": ["01_academic_stress.md::3"]}
+{"id": 9, "style": "natural", "lang": "en", "query": "I keep procrastinating and cannot bring myself to start my assignments", "relevant": ["02_coping_strategies.md::0"]}
+{"id": 10, "style": "natural", "lang": "en", "query": "how should I plan my week so that deadlines stop piling up on me", "relevant": ["02_coping_strategies.md::0"]}
+{"id": 11, "style": "natural", "lang": "en", "query": "the project is too big and I do not know where to begin", "relevant": ["02_coping_strategies.md::0"]}
+{"id": 12, "style": "natural", "lang": "en", "query": "what should I change physically to handle stress better", "relevant": ["02_coping_strategies.md::1"]}
+{"id": 13, "style": "natural", "lang": "en", "query": "does exercise really make a difference to stress levels", "relevant": ["02_coping_strategies.md::1"]}
+{"id": 14, "style": "natural", "lang": "en", "query": "a quick way to calm myself down right before an exam", "relevant": ["02_coping_strategies.md::2"]}
+{"id": 15, "style": "natural", "lang": "en", "query": "breathing exercise to stop feeling panicky", "relevant": ["02_coping_strategies.md::2"]}
+{"id": 16, "style": "natural", "lang": "en", "query": "would writing down what I feel each day help me at all", "relevant": ["02_coping_strategies.md::2"]}
+{"id": 17, "style": "natural", "lang": "en", "query": "I feel alone with all of this, does telling somebody actually help", "relevant": ["02_coping_strategies.md::3"]}
+{"id": 18, "style": "natural", "lang": "en", "query": "is it better to revise with friends or on my own when I am stressed", "relevant": ["02_coping_strategies.md::3"]}
+{"id": 19, "style": "natural", "lang": "en", "query": "is having a few drinks to unwind after a hard week a bad idea", "relevant": ["02_coping_strategies.md::4"]}
+{"id": 20, "style": "natural", "lang": "en", "query": "which coping habits should I avoid because they make things worse", "relevant": ["02_coping_strategies.md::4"]}
+{"id": 21, "style": "natural", "lang": "en", "query": "emergency number to call if somebody is in immediate danger", "relevant": ["03_support_resources_vietnam.md::0"]}
+{"id": 22, "style": "natural", "lang": "en", "query": "free mental health hotline for young people in Vietnam", "relevant": ["03_support_resources_vietnam.md::0"]}
+{"id": 23, "style": "natural", "lang": "en", "query": "does my university offer free counselling and how would I book it", "relevant": ["03_support_resources_vietnam.md::1"]}
+{"id": 24, "style": "natural", "lang": "en", "query": "who at my school can I talk to about my mental health", "relevant": ["03_support_resources_vietnam.md::1"]}
+{"id": 25, "style": "natural", "lang": "en", "query": "which hospital in Hanoi treats mental health conditions", "relevant": ["03_support_resources_vietnam.md::2"]}
+{"id": 26, "style": "natural", "lang": "en", "query": "where can I get a proper psychiatric assessment", "relevant": ["03_support_resources_vietnam.md::2"]}
+{"id": 27, "style": "natural", "lang": "en", "query": "I feel embarrassed about the idea of going to see a counsellor", "relevant": ["03_support_resources_vietnam.md::3"]}
+{"id": 28, "style": "natural", "lang": "en", "query": "will health insurance cover a mental health appointment", "relevant": ["03_support_resources_vietnam.md::3"]}
+{"id": 29, "style": "natural", "lang": "en", "query": "why does not sleeping enough make studying so much harder", "relevant": ["04_sleep_and_study.md::0"]}
+{"id": 30, "style": "natural", "lang": "en", "query": "how does sleep affect what I remember from revision", "relevant": ["04_sleep_and_study.md::0"]}
+{"id": 31, "style": "natural", "lang": "en", "query": "should I stay up the whole night before my exam", "relevant": ["04_sleep_and_study.md::1"]}
+{"id": 32, "style": "natural", "lang": "en", "query": "is four hours of revision plus sleep better than eight hours awake", "relevant": ["04_sleep_and_study.md::1"]}
+{"id": 33, "style": "natural", "lang": "en", "query": "I cannot fall asleep at night, which habits should I change", "relevant": ["04_sleep_and_study.md::2"]}
+{"id": 34, "style": "natural", "lang": "en", "query": "how long before bed should I stop looking at my phone", "relevant": ["04_sleep_and_study.md::2"]}
+{"id": 35, "style": "natural", "lang": "en", "query": "over a month of bad sleep and repeated nightmares, should I see a doctor", "relevant": ["04_sleep_and_study.md::3"]}
+{"id": 36, "style": "natural", "lang": "en", "query": "what exactly does the DASS-21 measure", "relevant": ["05_dass_pss_scales.md::0"]}
+{"id": 37, "style": "natural", "lang": "en", "query": "how are the DASS-21 subscale scores worked out", "relevant": ["05_dass_pss_scales.md::0"]}
+{"id": 38, "style": "natural", "lang": "en", "query": "what does my PSS-10 total score actually mean", "relevant": ["05_dass_pss_scales.md::1"]}
+{"id": 39, "style": "natural", "lang": "en", "query": "which questions on the PSS-10 are scored in reverse", "relevant": ["05_dass_pss_scales.md::1"]}
+{"id": 40, "style": "natural", "lang": "en", "query": "my score came out high, does that mean I have a disorder", "relevant": ["05_dass_pss_scales.md::2"]}
+{"id": 41, "style": "natural", "lang": "en", "query": "should I be worried about a high score during exam season", "relevant": ["05_dass_pss_scales.md::2"]}
+{"id": 42, "style": "natural", "lang": "en", "query": "my parents expect far too much of me academically", "relevant": ["06_family_financial_pressure.md::0"]}
+{"id": 43, "style": "natural", "lang": "en", "query": "how do I talk to my family about how hard my course really is", "relevant": ["06_family_financial_pressure.md::0"]}
+{"id": 44, "style": "natural", "lang": "en", "query": "my part time job is eating into the hours I need to study", "relevant": ["06_family_financial_pressure.md::1"]}
+{"id": 45, "style": "natural", "lang": "en", "query": "I am struggling to pay my tuition and my rent", "relevant": ["06_family_financial_pressure.md::1"]}
+{"id": 46, "style": "natural", "lang": "en", "query": "I keep comparing myself to my friends online and it makes me feel worse", "relevant": ["06_family_financial_pressure.md::2"]}
+{"id": 47, "style": "natural", "lang": "en", "query": "everyone around me seems more successful than I am", "relevant": ["06_family_financial_pressure.md::2"]}
+{"id": 48, "style": "natural", "lang": "vi", "query": "mất ngủ trước kỳ thi thì phải làm sao", "relevant": ["04_sleep_and_study.md::2", "04_sleep_and_study.md::1"]}
+{"id": 49, "style": "natural", "lang": "vi", "query": "em muốn tìm phòng tham vấn tâm lý của trường", "relevant": ["03_support_resources_vietnam.md::1"]}
+{"id": 50, "style": "natural", "lang": "vi", "query": "cách thư giãn nhanh khi cảm thấy lo lắng", "relevant": ["02_coping_strategies.md::2"]}
+{"id": 51, "style": "natural", "lang": "vi", "query": "bố mẹ kỳ vọng quá nhiều khiến em rất áp lực", "relevant": ["06_family_financial_pressure.md::0"]}
+{"id": 52, "style": "keywords", "lang": "en", "query": "exam pressure overwhelmed exhausted deadline student with High stress", "relevant": ["02_coping_strategies.md::0", "01_academic_stress.md::1"], "note": "shape produced by build_rag_query() from lexicon keywords + questionnaire label"}
+{"id": 53, "style": "keywords", "lang": "en", "query": "insomnia cannot sleep staying up late student with High stress", "relevant": ["04_sleep_and_study.md::2", "04_sleep_and_study.md::1"], "note": "build_rag_query() shape"}
+{"id": 54, "style": "keywords", "lang": "en", "query": "family expectations tuition financial pressure student with Moderate stress", "relevant": ["06_family_financial_pressure.md::0", "06_family_financial_pressure.md::1"], "note": "build_rag_query() shape"}
+{"id": 55, "style": "keywords", "lang": "en", "query": "coping strategies for academic stress in university students", "relevant": ["02_coping_strategies.md::0", "02_coping_strategies.md::1", "02_coping_strategies.md::2", "02_coping_strategies.md::3"], "note": "the literal fallback query in build_rag_query() when no other signal exists"}
+{"id": 56, "style": "keywords", "lang": "en", "query": "hopeless worthless lost motivation student with Severe stress", "relevant": ["01_academic_stress.md::3", "03_support_resources_vietnam.md::1"], "note": "build_rag_query() shape; should surface help-seeking guidance"}
+{"id": 57, "style": "keywords", "lang": "vi", "query": "áp lực học tập mất ngủ quá tải student with High stress", "relevant": ["02_coping_strategies.md::0", "04_sleep_and_study.md::2"], "note": "build_rag_query() shape with Vietnamese lexicon keywords"}

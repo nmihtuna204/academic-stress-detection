@@ -36,9 +36,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Academic Stress Detection API",
     description=(
-        "Screening/self-reflection aid for academic stress of Vietnamese university "
-        "students. NOT a diagnostic tool. / Công cụ sàng lọc và tự nhìn nhận mức độ "
-        "căng thẳng học đường — KHÔNG phải công cụ chẩn đoán."
+        "Screening/self-reflection aid for academic stress in university students. "
+        "NOT a diagnostic tool."
     ),
     version=__version__,
     lifespan=lifespan,
@@ -66,19 +65,25 @@ async def health() -> dict:
 async def assess_text(
     payload: TextEntryIn, session: Session = Depends(get_session)
 ) -> AssessmentResponse:
-    """Analyze free text only: NLP emotion + keywords + crisis check (no LLM)."""
+    """Analyze free text only: NLP emotion + keywords + crisis check (no LLM).
+
+    The crisis rule runs before the text is written, so a self-harm disclosure
+    is routed to helplines rather than retained.
+    """
     user = services.get_or_create_user(session, payload.student_id, None)
     emotion = analyze(payload.raw_text)
-    services.save_text_entry(session, user.student_id, payload.raw_text, emotion)
 
     crisis = check_crisis(raw_text=payload.raw_text)
     if crisis.is_crisis:
+        logger.warning("Crisis rule triggered: %s", crisis.reasons)
         return AssessmentResponse(
             student_id=user.student_id,
             crisis_detected=True,
-            crisis_message_vi=crisis.message_vi,
+            crisis_message=crisis.message,
             emotion=emotion,
         )
+
+    services.save_text_entry(session, user.student_id, payload.raw_text, emotion)
     return AssessmentResponse(student_id=user.student_id, emotion=emotion)
 
 
@@ -94,23 +99,27 @@ async def assess_questionnaire(
     dass_result, pss_result, questionnaire = services.score_questionnaires(
         payload.dass21, payload.pss10
     )
-    row = services.save_questionnaire(
-        session, user.student_id, payload.dass21, payload.pss10, dass_result, pss_result
-    )
-    questionnaire.response_id = row.response_id
-    questionnaire.student_id = user.student_id
 
+    # Same ordering rule as the other endpoints: clear the crisis check before
+    # anything the student disclosed is written down.
     crisis = check_crisis(
         dass_answers=payload.dass21.answers if payload.dass21 else None,
         dass_depression_severity=dass_result["depression"]["severity"] if dass_result else None,
     )
     if crisis.is_crisis:
+        logger.warning("Crisis rule triggered: %s", crisis.reasons)
         return AssessmentResponse(
             student_id=user.student_id,
             crisis_detected=True,
-            crisis_message_vi=crisis.message_vi,
+            crisis_message=crisis.message,
             questionnaire=questionnaire,
         )
+
+    row = services.save_questionnaire(
+        session, user.student_id, payload.dass21, payload.pss10, dass_result, pss_result
+    )
+    questionnaire.response_id = row.response_id
+    questionnaire.student_id = user.student_id
     return AssessmentResponse(student_id=user.student_id, questionnaire=questionnaire)
 
 
@@ -124,6 +133,20 @@ async def assess_full(
             status_code=422, detail="provide raw_text and/or questionnaire answers"
         )
     return await services.run_full_assessment(session, payload)
+
+
+@app.delete("/session/{student_id}")
+async def delete_session(student_id: str, session: Session = Depends(get_session)) -> dict:
+    """Permanently erase every record for one anonymized id.
+
+    Implements the right to withdraw promised by the consent document. The
+    anonymized id is the only handle that exists, so possession of it is what
+    authorises the deletion, exactly as it is what authorises reading history.
+    """
+    deleted = services.delete_student_data(session, student_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="student_id not found")
+    return {"student_id": student_id, "deleted": deleted}
 
 
 @app.get("/history/{student_id}")

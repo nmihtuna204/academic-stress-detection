@@ -13,7 +13,7 @@ from app.db import (
 def test_create_user_and_related_rows(tmp_db):
     session = next(get_session())
     try:
-        user = User(age=21, gender="Nữ", year_of_study=3, major="CNTT", university="UEH")
+        user = User(age=21, gender="Female", year_of_study=3, major="IT", university="UEH")
         session.add(user)
         session.commit()
         assert user.student_id  # UUID auto-generated
@@ -21,13 +21,13 @@ def test_create_user_and_related_rows(tmp_db):
 
         entry = TextEntry(
             student_id=user.student_id,
-            raw_text="Tuần này mình rất áp lực vì deadline.",
-            text_length=37,
-            language="vi",
+            raw_text="I have been under a lot of deadline pressure this week.",
+            text_length=55,
+            language="en",
             emotion_label="negative",
             emotion_scores={"negative": 0.9},
             sentiment_polarity="negative",
-            stress_keywords=["áp lực", "deadline"],
+            stress_keywords=["pressure", "deadline"],
         )
         response = QuestionnaireResponse(
             student_id=user.student_id,
@@ -39,8 +39,8 @@ def test_create_user_and_related_rows(tmp_db):
             study_hours_per_week=30.0,
             is_exam_period=True,
             assignment_workload=4,
-            academic_pressure_source=["thi cử", "gia đình"],
-            coping_strategies=["tập thể dục"],
+            academic_pressure_source=["Exams", "Family expectations"],
+            coping_strategies=["Exercise/play sport"],
         )
         prediction = Prediction(
             student_id=user.student_id,
@@ -56,7 +56,7 @@ def test_create_user_and_related_rows(tmp_db):
         fetched = session.get(User, user.student_id)
         assert fetched is not None
         assert len(fetched.text_entries) == 1
-        assert fetched.text_entries[0].stress_keywords == ["áp lực", "deadline"]
+        assert fetched.text_entries[0].stress_keywords == ["pressure", "deadline"]
         assert fetched.predictions[0].llm_confidence == 0.8
     finally:
         session.close()

@@ -62,7 +62,7 @@ def sample_explanations(n: int = 30, seed: int = 42) -> pd.DataFrame:
                 "item_id": p.prediction_id,
                 "predicted_level": p.llm_predicted_label,
                 "ground_truth_level": p.ground_truth_label,
-                "explanation_vi": p.llm_explanation,
+                "explanation": p.llm_explanation,
             }
             for p in chosen
         ]

@@ -2,6 +2,8 @@
 
 import random
 
+import pytest
+
 from app.eval.evaluate import compute_metrics, load_label_pairs
 from app.eval.synthetic import generate_student, seed_database, simulate_llm_prediction
 
@@ -58,3 +60,21 @@ class TestMetrics:
         assert len(metrics["confusion_matrix"]) == 4
         assert metrics["n_samples"] == 6
         assert "Low" in metrics["per_class"]
+
+    def test_disagreement_rate(self):
+        """How often the model contradicts the validated instrument.
+
+        The UI defers to the instrument for the headline level, so this is the
+        rate at which that fusion rule actually changes what a student sees.
+        """
+        y_true = ["Low", "Low", "Moderate", "High", "Severe", "Moderate"]
+        y_pred = ["Low", "Moderate", "Moderate", "High", "High", "Moderate"]
+        metrics = compute_metrics(y_true, y_pred)
+        assert metrics["n_disagreements"] == 2
+        assert metrics["disagreement_rate"] == pytest.approx(2 / 6, abs=1e-4)
+
+    def test_perfect_agreement_has_no_disagreement(self):
+        labels = ["Low", "Moderate", "High", "Severe"] * 5
+        metrics = compute_metrics(labels, labels)
+        assert metrics["n_disagreements"] == 0
+        assert metrics["disagreement_rate"] == 0.0

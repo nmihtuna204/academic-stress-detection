@@ -10,7 +10,7 @@ from app.eval.sus_score import grade, score_file, sus_score
 
 
 class TestExportForRating:
-    def seed_predictions(self, n=10, explanation="Giải thích thật của mô hình."):
+    def seed_predictions(self, n=10, explanation="A real explanation from the model."):
         from app.db import Prediction, User, get_session
 
         session = next(get_session())
@@ -98,7 +98,7 @@ class TestKrippendorffAlpha:
 
 class TestRatingAnalysis:
     def make_sheets(self, directory):
-        items = pd.DataFrame({"item_id": ["a", "b", "c"], "explanation_vi": ["x", "y", "z"]})
+        items = pd.DataFrame({"item_id": ["a", "b", "c"], "explanation": ["x", "y", "z"]})
         for rater, scores in (("rater1", [4, 5, 3]), ("rater2", [4, 4, 3])):
             sheet = items.copy()
             sheet["accuracy_1_5"] = scores

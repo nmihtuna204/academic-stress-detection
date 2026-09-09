@@ -41,7 +41,7 @@ class EmotionResult(BaseModel):
     emotion_scores: dict[str, float]
     sentiment_polarity: SentimentPolarity
     stress_keywords: list[str] = Field(default_factory=list)
-    language: Language = Language.VI
+    language: Language = Language.EN
     model_stress_level: StressLevel | None = None  # from local PhoBERT classifier, if loaded
 
 
@@ -176,9 +176,24 @@ class LlmAssessment(BaseModel):
 
     predicted_level: StressLevel = Field(..., description="Low/Moderate/High/Severe")
     confidence: float = Field(..., ge=0.0, le=1.0)
-    reasoning_vi: str = Field(..., description="Explanation in Vietnamese, empathetic, non-diagnostic")
-    suggestions_vi: list[str] = Field(..., min_length=3, max_length=5, description="Actionable coping suggestions in Vietnamese")
+    reasoning: str = Field(..., description="Explanation, empathetic, non-diagnostic")
+    # Floor is 1, not 3. Prompt rule 4 forbids inventing advice the retrieved
+    # material does not support, so when retrieval is thin a fully compliant
+    # reply may carry fewer than three suggestions. A floor of 3 made those two
+    # rules contradictory and discarded the whole assessment on a validation
+    # error; grounding is the property worth keeping.
+    suggestions: list[str] = Field(
+        ..., min_length=1, max_length=5, description="Actionable coping suggestions"
+    )
     risk_flags: list[str] = Field(default_factory=list, description="e.g. self_harm_risk, severe_sleep_deprivation")
+    citations: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Knowledge-base chunk ids the suggestions were drawn from, e.g. "
+            "'02_coping_strategies.md::0'. Must be ids that appeared in the "
+            "retrieved context; the service drops any that did not."
+        ),
+    )
 
 
 class FullAssessmentRequest(BaseModel):
@@ -194,13 +209,33 @@ class AssessmentResponse(BaseModel):
     prediction_id: str | None = None
     student_id: str | None = None
     crisis_detected: bool = False
-    crisis_message_vi: str | None = None
+    crisis_message: str | None = None
     emotion: EmotionResult | None = None
     questionnaire: QuestionnaireResult | None = None
     assessment: LlmAssessment | None = None
-    rag_sources: list[str] = Field(default_factory=list)
-    disclaimer_vi: str = (
-        "⚠️ Đây là công cụ sàng lọc và tự nhìn nhận, KHÔNG phải công cụ chẩn đoán y khoa. "
-        "Kết quả chỉ mang tính tham khảo. Nếu bạn cảm thấy quá tải, hãy tìm đến chuyên gia "
-        "tâm lý hoặc cơ sở y tế."
+    rag_sources: list[str] = Field(
+        default_factory=list,
+        description="Human-readable labels of the chunks that were RETRIEVED.",
+    )
+    cited_sources: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Labels of the chunks the model actually CITED, after the service has "
+            "discarded any citation that was not in the retrieved set. This is the "
+            "list the interface attributes the advice to; `rag_sources` reflects "
+            "retrieval, which is not the same thing."
+        ),
+    )
+    advice_unavailable_reason: str | None = Field(
+        None,
+        description=(
+            "Set when generated advice was deliberately withheld rather than merely "
+            "absent, e.g. retrieval returned nothing so the model had nothing to "
+            "ground suggestions in. The interface shows this to the student."
+        ),
+    )
+    disclaimer: str = (
+        "⚠️ This is a screening and self-reflection tool, NOT a medical diagnostic "
+        "instrument. Results are indicative only. If you feel overwhelmed, please reach "
+        "out to a mental-health professional or a medical facility."
     )

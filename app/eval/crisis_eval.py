@@ -1,8 +1,18 @@
 """Evaluate the deterministic crisis-detection rule against a labeled test set.
 
-Test set: `data/eval/crisis_testset.jsonl` - hand-written Vietnamese items
-(explicit and indirect risk phrasing, hyperbole hard negatives, borderline
-cases with annotation notes). Each line:
+Test sets, both hand-written, same schema:
+
+    data/eval/crisis_testset.jsonl     50 Vietnamese items
+    data/eval/crisis_testset_en.jsonl  50 English items (added 2026-09-09)
+
+The English set exists because the application was converted to English on
+2026-09-05 while the rule had only ever been measured on Vietnamese input. The
+lexicon is bilingual, but its English half had never been evaluated - the
+measured precision and recall described a language the deployed application no
+longer accepts by default.
+
+Each set covers explicit and indirect risk phrasing, hyperbole hard negatives,
+and borderline cases carrying annotation notes. Each line:
 
     {"id": int, "text": str, "expected": bool, "category": str,
      "dass_items": {"17": 3, ...}?, "note": str?}
@@ -74,7 +84,7 @@ def predict(item: Item) -> bool:
     return result.is_crisis
 
 
-def evaluate(items: list[Item]) -> dict:
+def evaluate(items: list[Item], testset: str = "(unnamed)") -> dict:
     tp = fp = fn = tn = 0
     false_positives: list[Item] = []
     false_negatives: list[Item] = []
@@ -102,6 +112,7 @@ def evaluate(items: list[Item]) -> dict:
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
     return {
+        "testset": testset,
         "n": len(items),
         "tp": tp, "fp": fp, "fn": fn, "tn": tn,
         "precision": round(precision, 4),
@@ -117,7 +128,7 @@ def format_report(results: dict) -> str:
     lines = [
         "# Crisis-detection rule evaluation",
         "",
-        f"Test set: {results['n']} hand-written Vietnamese items "
+        f"Test set: `{results['testset']}` - {results['n']} hand-written items "
         f"(TP={results['tp']} FP={results['fp']} FN={results['fn']} TN={results['tn']})",
         "",
         "| metric | value |",
@@ -159,7 +170,7 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_testset(Path(args.testset))
-    results = evaluate(items)
+    results = evaluate(items, testset=Path(args.testset).name)
     report = format_report(results)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(report, encoding="utf-8")

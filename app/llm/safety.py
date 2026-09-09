@@ -1,7 +1,9 @@
 """Crisis-detection rule and helpline content (safety-critical, deterministic).
 
 The rule runs BEFORE any LLM call. If it fires, the normal assessment flow is
-bypassed and the crisis message (Vietnamese helplines) is returned instead.
+bypassed and the crisis message is returned instead. The helplines stay
+Vietnamese services because the deployment audience is students in Vietnam;
+only the surrounding wording is English.
 
 Triggers:
 - explicit self-harm/suicide language in the free text (lexicon-based), or
@@ -17,23 +19,25 @@ from dataclasses import dataclass, field
 from app.nlp.lexicon import find_crisis_keywords
 from app.scoring.dass21 import RISK_ITEMS
 
-CRISIS_MESSAGE_VI = """\
-🆘 **Chúng mình thực sự quan tâm đến sự an toàn của bạn.**
+CRISIS_MESSAGE = """\
+🆘 **Your safety genuinely matters to us.**
 
-Từ những gì bạn chia sẻ, có vẻ bạn đang trải qua giai đoạn rất khó khăn. \
-Bạn không đơn độc, và những cảm xúc này có thể vượt qua được với sự hỗ trợ đúng cách.
+From what you shared, it sounds like you are going through something very hard \
+right now. You are not alone, and these feelings can be worked through with the \
+right support.
 
-**Hãy liên hệ ngay một trong các kênh sau:**
+**Please reach out to one of these right now:**
 
-- 📞 **Đường dây nóng Ngày Mai: 096 306 1414** — hỗ trợ tâm lý miễn phí cho người trẻ
-- 📞 **Tổng đài 111** — miễn phí, hoạt động 24/7
-- 🚑 **Cấp cứu 115** — nếu bạn đang trong tình huống nguy hiểm
-- 🏥 Đến cơ sở y tế gần nhất hoặc phòng tham vấn tâm lý của trường bạn
+- 📞 **Ngay Mai helpline: 096 306 1414** — free psychological support for young people
+- 📞 **Hotline 111** — national support line, free, available 24/7
+- 🚑 **Emergency 115** — if you are in immediate danger
+- 🏥 Go to the nearest medical facility or your university counselling office
 
-**Ngay lúc này:** đừng ở một mình — hãy gọi hoặc nhắn tin cho một người bạn tin tưởng \
-(bạn thân, anh chị, bố mẹ, thầy cô) và cho họ biết bạn đang cần được ở bên cạnh.
+**Right now:** please don't stay on your own. Call or message someone you trust \
+(a close friend, a sibling, a parent, a teacher) and tell them you need someone \
+with you.
 
-Việc tìm kiếm sự giúp đỡ là dấu hiệu của sự dũng cảm. Bạn xứng đáng được hỗ trợ. 💙\
+Asking for help is an act of courage. You deserve support. 💙\
 """
 
 
@@ -42,7 +46,7 @@ class CrisisCheckResult:
     is_crisis: bool
     reasons: list[str] = field(default_factory=list)
     matched_keywords: list[str] = field(default_factory=list)
-    message_vi: str | None = None
+    message: str | None = None
 
 
 def check_crisis(
@@ -81,6 +85,6 @@ def check_crisis(
             is_crisis=True,
             reasons=reasons,
             matched_keywords=matched,
-            message_vi=CRISIS_MESSAGE_VI,
+            message=CRISIS_MESSAGE,
         )
     return CrisisCheckResult(is_crisis=False)

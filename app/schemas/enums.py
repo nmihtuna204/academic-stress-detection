@@ -6,9 +6,9 @@ from enum import Enum
 
 
 class Gender(str, Enum):
-    NAM = "Nam"
-    NU = "Nữ"
-    KHAC = "Khác"
+    MALE = "Male"
+    FEMALE = "Female"
+    OTHER = "Other"
 
 
 class Language(str, Enum):

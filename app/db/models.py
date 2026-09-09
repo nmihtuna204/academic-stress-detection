@@ -30,7 +30,7 @@ class User(Base):
 
     student_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    gender: Mapped[str | None] = mapped_column(String(8), nullable=True)  # Nam/Nữ/Khác
+    gender: Mapped[str | None] = mapped_column(String(8), nullable=True)  # Male/Female/Other
     year_of_study: Mapped[int | None] = mapped_column(Integer, nullable=True)
     major: Mapped[str | None] = mapped_column(String(120), nullable=True)
     university: Mapped[str | None] = mapped_column(String(200), nullable=True)
