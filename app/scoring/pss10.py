@@ -1,8 +1,19 @@
 """PSS-10 (Perceived Stress Scale, 10 items) scoring engine.
 
-Implements Cohen's official PSS-10 scoring: items are rated 0-4, items
-4, 5, 7 and 8 are reverse-scored (4 - value), and the total (0-40) maps to
-Low (0-13), Moderate (14-26), High (27-40) perceived stress.
+Two claims of different strength live here, and they must not be conflated.
+
+WHAT IS COHEN'S: the instrument itself - ten items rated 0-4, with items 4, 5,
+7 and 8 reverse-scored (4 - value) because they are positively worded, summed
+to a 0-40 total. Item wording below is the original English PSS-10. This part
+is the published, validated procedure.
+
+WHAT IS NOT COHEN'S: the Low (0-13) / Moderate (14-26) / High (27-40) bands.
+Cohen reported normative means by demographic group, not clinical cut-offs.
+These thresholds are a widely-reproduced convention rather than a validated
+diagnostic boundary, and an earlier version of this docstring wrongly called
+them "Cohen's official scoring". Anything downstream that treats a band as a
+clinical threshold is overreading it; the bands exist here to give the student
+plain-language feedback, not a diagnosis.
 
 Pure functions only - deterministic ground-truth source.
 """

@@ -89,7 +89,7 @@ status is kept in parentheses so the delta is visible rather than quietly overwr
 | Bootstrap 95 % CI | **Missing** | — | S | M |
 | McNemar proposed-vs-best-baseline | **Missing** | — | S | M |
 | RAG: Recall@k / MRR / nDCG | **Done** (2026-09-06) — 57 labelled queries; MRR 0.787, Recall@5 0.903 *(was Missing; this row contradicted section 5, which already recorded it as done)* | `data/eval/retrieval_eval.md` | — | — |
-| RAG: faithfulness/groundedness judging | **Missing** | — | M | **H** |
+| RAG: faithfulness/groundedness judging | **Done** (2026-09-19) — 75 % of 121 suggestions fully supported, 99 % at least partially; no-RAG control declined on 39/40 items. Judge not yet human-validated *(was Missing)* | [faithfulness_eval.py](../app/eval/faithfulness_eval.py), RESULTS.md §4b | — | — |
 | RAG: k-sweep, rerank ablation | **Missing** | — | M | M |
 | LLM safety red-team suite (≥30 prompts) | **Missing** — the 50-item sets test the regex rule, not the LLM | `data/eval/crisis_testset.jsonl` | M | H |
 | Crisis rule recall improved | **Done** (2026-09-09) — construct-based patterns replace the flat phrase list; on a held-out set frozen before the rewrite, P 0.600→**1.000**, R 0.200→**0.867**, indirect ideation 0/14→**11/14**, zero false positives across 20 idioms | [crisis_patterns.py](../app/nlp/crisis_patterns.py), `data/eval/crisis_eval_heldout.md` | — | — |
@@ -105,7 +105,7 @@ status is kept in parentheses so the delta is visible rather than quietly overwr
 | Feature | Status | Evidence | Effort | Impact |
 |---|---|---|---|---|
 | Test suite | **Done** — **277 tests, all passing** (2026-09-08; was 198) | `python -m pytest tests/ -q` | — | — |
-| Coverage on `app/` | **Done** — **83 % total**; services 90 %, scoring 100 %, safety 100 %, retriever 100 % | `pytest --cov=app` | — | — |
+| Coverage on `app/` | **Done** — **94 % on the application code**, 70 % once the offline evaluation scripts (`latency_eval.py`, `make_figures.py` — untested) are included; services 95 %, scoring 100 %, safety 100 %, retriever 100 % | `pytest --cov=app` | — | — |
 | Hand-computed scoring fixtures incl. edge cases | **Done** | [tests/test_scoring_dass21.py](../tests/test_scoring_dass21.py), [test_scoring_pss10.py](../tests/test_scoring_pss10.py) | — | — |
 | API contract tests | **Done** — 14 tests | [tests/test_api.py](../tests/test_api.py) | — | — |
 | RAG test with a fixed mini-corpus | **Done** | [tests/test_rag.py](../tests/test_rag.py), [test_retriever.py](../tests/test_retriever.py) (untracked) | — | — |
@@ -138,7 +138,7 @@ status is kept in parentheses so the delta is visible rather than quietly overwr
 | Per-claim citations, verified | **Done** (2026-09-06) — `LlmAssessment.citations`; service discards ids not in the retrieved set | [services.py](../app/api/services.py) | — | — |
 | Retrieval quality measured (Recall@k, MRR, nDCG) | **Done** (2026-09-06) — 57 labelled queries; MRR 0.787, Recall@5 0.903 | `data/eval/retrieval_eval.md` | — | — |
 | Production query shape performs adequately | **Done** (2026-09-06) — rewritten to keep the student's sentence and drop the questionnaire label; MRR 0.509 → 0.839 on affected queries | `data/eval/retrieval_eval.md`, [services.py](../app/api/services.py) | — | — |
-| Faithfulness measured (does the answer use the citation) | **Missing** — needs an LLM-as-judge pass and an API key | — | M | H |
+| Faithfulness measured (does the answer use the citation) | **Done** (2026-09-19) — LLM-as-judge (qwen3.8-27b, other family), no-RAG control arm; `--agreement` for judge-human kappa pending ratings *(was Missing)* | [faithfulness_eval.py](../app/eval/faithfulness_eval.py) | — | — |
 | Colour never the sole carrier of meaning | **Done** | [ui/tokens.py:66-84](../streamlit_app/ui/tokens.py#L66-L84) | — | — |
 | ≥4.5:1 contrast, measured not assumed | **Done** | [ui/tokens.py:20-24,42-45](../streamlit_app/ui/tokens.py#L20-L24) | — | — |
 | Colour-blind-safe severity palette | **Partial** — green→amber→orange→red is a hue ramp; mitigated by mandatory text labels | [tokens.py:66-73](../streamlit_app/ui/tokens.py#L66-L73) | S | L |

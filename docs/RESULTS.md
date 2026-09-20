@@ -7,7 +7,8 @@ synthetic data it is labeled as such. Regeneration commands are given with
 each table (figures land in `data/eval/`, which is intentionally not in git).
 
 Last regenerated: 2026-07-18/19 on the synthetic dataset; the crisis-rule and
-retrieval-quality sections re-run 2026-09-06.
+retrieval-quality sections re-run 2026-09-06; `llm_full`, the ablation and the
+faithfulness section re-run 2026-09-19 after the cache contamination in §2.
 
 ---
 
@@ -40,7 +41,7 @@ Regenerate: `python -m app.eval.compare --dataset synthetic`
 | majority | 70 | 0.3286 | 0.1237 | 0.0000 | 0.0000 | 0.4946 | 0.0000 | 0.0000 |
 | tfidf_svm | 70 | 0.6571 | 0.6524 | 0.5424 | 0.8205 | 0.6222 | 0.5000 | 0.6667 |
 | llm_zeroshot | 70 | 0.5286 | 0.5238 | 0.3892 | 0.8421 | 0.3750 | 0.3158 | 0.5625 |
-| llm_full | — | **not run** | — | — | — | — | — | — |
+| llm_full | 70 | 0.6714 | 0.6495 | 0.5764 | 0.8889 | 0.8500 | 0.3448 | 0.5143 |
 
 Run 2026-09-08 with `openai/gpt-oss-120b` served by Groq. The report and this
 table must name that model: it is not the `gpt-4o-mini` the design chapter
@@ -54,52 +55,72 @@ assumed, and the numbers belong to the model that produced them.
   a bag of n-grams is very good at recognising 41 recurring templates, which is
   precisely the criticism §5.3 makes of the dataset. It is evidence about the
   data, not evidence that the architecture is wrong.
-- **The full proposed system does not beat zero-shot.** `llm_full` (0.509
-  macro-F1) sits marginally below `llm_zeroshot` (0.524), so on this dataset the
-  added RAG, questionnaire and emotion signals bought nothing. The component
-  ablation is what would localise why; it has not been run.
-- **`llm_full` has no reportable number, and the earlier one was withdrawn.**
-  A re-run on 2026-09-08 completed 38 of 70 items before the Groq free tier's
-  daily cap (200,000 tokens) was reached; the remaining 32 requests were
-  refused with HTTP 429. At a 46 % unusable rate the harness refuses to publish
-  a score, because the metrics would describe the fallback label rather than the
-  system. The 38 completed responses are cached, so finishing the run costs only
-  the remaining 32 requests.
+> **Correction, 2026-09-19. Every `llm_full` number published before this date
+> was contaminated.** The LLM cache held 85 stub entries written by a test on
+> 2026-09-09 (reasoning `"x"`, suggestions `["a"]`, label Moderate or High). The
+> cache key hashes inputs only, so real runs served those stubs as model output:
+> **24 of the 70 `llm_full` predictions**, 14/40 of the ablation's `full`
+> configuration and **40/40 of `no_questionnaire`**. The stubs are quarantined
+> (`data/eval/llm_cache_quarantine_2026-09-09_test_stubs/`, kept as evidence),
+> every affected item was regenerated, and `tests/conftest.py` now fails any
+> test that writes to the real cache. The withdrawn figures were accuracy 0.4857
+> / macro-F1 0.5000 / kappa 0.3105, and the conclusion drawn from them - "the
+> full system does not beat zero-shot" - is reversed below. `llm_zeroshot` and
+> the offline systems were unaffected.
 
-  **A correction to the previous entry.** It reported "7 parse failures out of
-  70" and attributed them to the model's JSON formatting. That attribution was
-  not evidence-based: the failure path counted failures and then discarded the
-  replies, so nothing distinguished a malformed reply from a request that never
-  landed. Failures are now retained and classified. In this run, of 32 failures
-  **31 were HTTP 429 rate-limit refusals and exactly one was malformed JSON**
-  (`"confidence": 0. nine` — the model spelled a digit as a word). The single
-  genuine parse failure is 1 in 39 requests that actually reached the model,
-  not 1 in 10. Any statement that the model "cannot hold the output format"
-  should be read against that ratio.
-- **The leakage caveat still stands.** `llm_full` receives the DASS/PSS scores
-  that define the ground-truth label, so its agreement is partly circular. The
-  `no_questionnaire` ablation is the honest text-only comparison and remains
-  unrun.
-- The `phobert_ft` gap against `tfidf_lr` is almost entirely the Severe class:
-  the fine-tuned model is 3-class and *cannot* predict Severe (identity 3→4
-  mapping; F1_severe = 0 by construction). On the three classes it can predict
-  it is competitive (f1_low 0.842, f1_moderate 0.681, f1_high 0.609).
+- **The full proposed system beats zero-shot clearly.** `llm_full` reaches
+  macro-F1 **0.649** against zero-shot's 0.524 (kappa 0.576 vs 0.389), with
+  `unusable=0` on all 70 items.
+- **It does not beat the classical baseline.** TF-IDF + LR's 0.682 is marginally
+  ahead; at n = 70 the ±0.117 accuracy noise floor makes the two
+  indistinguishable. On template-generated text a bag of n-grams is very good at
+  recognising 41 recurring templates, which is precisely the criticism §5.3 makes
+  of the dataset.
+- **`llm_full` receives the scores that define the label**, so part of its
+  advantage over zero-shot is leakage by construction. §3 measures how much.
+- **Its weak class is High (F1 0.345),** the class the questionnaire rule places
+  between two neighbours.
 
-## 3. Ablation study — NOT RUN YET
+## 3. Ablation study — re-run 2026-09-19
 
-Regenerate: `python -m app.eval.ablation --dataset synthetic`
-Add `--limit 35` to halve the token cost (stratified, seeded, identical
-across configs; disclose it wherever the numbers appear).
+Regenerate: `python -m app.eval.ablation --dataset synthetic --limit 40`
 (artifacts: `data/eval/ablation.csv`, `ablation.md`, `ablation.png`)
 
-Attempted 2026-09-08 and blocked before it began: the baseline comparison
-consumed the day's token allowance, so no ablation configuration could run. The
-runner writes an explicit "NOT RUN" marker instead of a table. The `full`
-configuration reuses the comparison's cache, so once that run is finished the
-ablation costs four configurations rather than five. Configurations wired and tested (with a
-mocked LLM): `full`, `no_rag`, `no_questionnaire`, `no_emotion`, `text_only` —
-all through the same engine as the headline `llm_full` system. The
-interpretation paragraph is generated from the computed deltas.
+Stratified 40/70-item subsample, seed 42, identical across configurations.
+
+| config | accuracy | macro-F1 | kappa | Δ macro-F1 |
+|---|---:|---:|---:|---:|
+| full | 0.700 | 0.6729 | 0.6141 | — |
+| no_rag | 0.675 | 0.6262 | 0.5860 | −0.047 |
+| no_questionnaire | *pending* | | | |
+| no_emotion | 0.600 | 0.5925 | 0.4855 | −0.080 |
+| text_only | *pending* | | | |
+
+**The sampling-noise floor at n = 40 is ±0.148** on accuracy (95 % Wilson, worst
+case p = 0.5). The harness computes it and refuses to give a direction to any
+delta inside it.
+
+- **No text-side component is measurably load-bearing for the label.** Removing
+  retrieval (−0.047) or the emotion features (−0.080) moves macro-F1 by less than
+  the floor. That is expected for RAG: its job is to ground the *advice*, not to
+  classify, and §4b measures that job directly.
+- **`no_questionnaire` and `text_only` are pending** the Groq free-tier daily
+  token allowance (refills at roughly 139 tokens/minute). A first pass gave
+  `no_questionnaire` 0.625 / 0.509 with 7/40 fallback labels (6 rate-limited):
+  under the harness's 20 % refusal threshold but still biased, so not quoted as a
+  result. `text_only` had 28/40 rate-limited and was refused.
+- **The earlier "questionnaire removal collapses macro-F1 by 0.411" is
+  withdrawn.** That run's `no_questionnaire` predictions were 40/40 test stubs
+  (see the §2 correction), so it measured the constant-Moderate floor.
+
+**Schema defect found by this run, fixed.** With no retrieved material the model
+follows prompt rule 4 and returns `"suggestions": []`, stating in its reasoning
+that no reference material was provided. `LlmAssessment` rejected that with
+`min_length=1`, turning a correct refusal into a parse failure and a fallback
+label. The floor is removed, and the service now tells the student when advice
+was withheld (`advice_unavailable_reason`). The schema text inside the prompt
+changed with it (no `minItems`), so rows generated before and after 2026-09-19
+used marginally different format instructions.
 
 ## 4. Crisis-detection rule — rebuilt and re-measured 2026-09-09
 
@@ -227,10 +248,50 @@ Six queries retrieved nothing relevant in the top 4. One is safety-relevant:
 surface either the help-seeking section or the counselling-service section. Every
 miss is listed verbatim in the artifact.
 
-**Not measured:** faithfulness. This scores what was *retrieved*, not whether the
-generator *used* it. That needs an LLM-as-judge pass and a live API key.
 **Caveat:** corpus, queries and labels all originate within this project, single
 annotator, so there is no inter-annotator agreement.
+
+### Faithfulness of generated advice — computed 2026-09-19
+
+Regenerate: `python -m app.eval.faithfulness_eval --limit 40`
+(artifacts: `data/eval/faithfulness_eval.md`, `faithfulness_judgments.csv`)
+
+Each suggestion the classification run already produced is judged against the
+four passages the production query retrieves for that item, by
+`qwen/qwen3.8-27b` - a different model family from the generator, so it is not
+grading its own phrasing. `supported` = the action and every specific detail are
+in a passage; `partial` = the core action is, but a detail was added;
+`unsupported` = the core action is in no passage. The `no_rag` configuration is
+the control: its suggestions were written with no reference material.
+
+| arm | items advised | suggestions | supported | supported or partial |
+|---|---:|---:|---:|---:|
+| full (with RAG) | 40/40 | 121 | **75 %** [0.67, 0.82] | **99 %** [0.95, 1.00] |
+| no_rag (control) | 1/40 | 1 | 0 % | 0 % |
+
+- **The strongest evidence is the refusal behaviour.** Without retrieved
+  material the generator declined to advise on **39/40 items** (36 with an empty
+  list, 3 by writing a refusal where the advice would go). With retrieval it
+  advised on 40/40. That is prompt rule 4 working end to end.
+- **One suggestion of 121 was judged unsupported** ("talk to a trusted friend or
+  join a study group"). The knowledge base does contain it
+  (`02_coping_strategies.md::3`), and that item is one of the three whose top-4
+  depended on keyword order before the fix below, so the generator most likely
+  saw that passage and the judge did not. Excluding those three items, 100 % of
+  112 suggestions are supported or partial.
+- **Caveats.** The judge is not yet validated against a human rater:
+  `faithfulness_judgments.csv` has an empty `human_verdict` column, and
+  `--agreement` reports judge-human kappa once a sample is filled in. Until then
+  the rates are the judge's opinion. Synthetic inputs, n = 40.
+
+**Retrieval was non-deterministic across processes; found by this analysis and
+fixed.** `ALL_KEYWORDS` was sorted by length only, from a set, so equal-length
+keywords kept the interpreter's hash order, which changes on every start. That
+is the order in which `build_rag_query` appends keywords, so the same sentence
+could retrieve different passages in different runs: 3 of 40 evaluation items
+changed their top-4 set. Sorting now breaks ties alphabetically, and a test runs
+the import under three `PYTHONHASHSEED` values. The retrieval-quality table above
+is unaffected (its queries are fixed strings; the re-run was byte-identical).
 
 ## 4c. Latency and cost — partly computed, offline
 

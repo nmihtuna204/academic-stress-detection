@@ -68,7 +68,7 @@ Each entry gives the question the panel will actually ask, the **best answer the
 
 > **Largely resolved 2026-09-06.** Four changes. (1) The prompt's rule 4 is now an absolute grounding constraint — the model may rephrase the retrieved material but may not add advice, services, numbers or clinical claims that are not in it, and is told to say so rather than fill a gap from its own knowledge. (2) `LlmAssessment` gained a `citations` field; each retrieved block is labelled with its chunk id and the model must cite those ids. (3) The service **verifies** the returned citations against what was actually retrieved and discards any it invented, so a fabricated provenance claim cannot reach the student. (4) Empty retrieval is now an explicit refusal: the generator is not called at all, and the response carries `advice_unavailable_reason` which the results page displays. The UI now attributes advice to `cited_sources` (what was used) and relegates `rag_sources` (what was searched) to an expander. Covered by `TestGrounding` in [tests/test_api.py](../tests/test_api.py).
 >
-> **Still open:** faithfulness itself is unmeasured — whether the cited passage actually supports the sentence citing it needs an LLM-as-judge pass and an API key. Retrieval quality, however, is now measured: see [RESULTS.md §4b](RESULTS.md) and `data/eval/retrieval_eval.md`.
+> **Faithfulness measured 2026-09-19:** 75 % of 121 generated suggestions fully supported by the retrieved passages and 99 % at least partially (LLM judge from a different model family); without retrieval the generator declined to advise on 39/40 items. Still open: validating the judge against a human rater. Retrieval quality, however, is now measured: see [RESULTS.md §4b](RESULTS.md) and `data/eval/retrieval_eval.md`.
 
 ---
 
@@ -81,6 +81,28 @@ Each entry gives the question the panel will actually ask, the **best answer the
 **⚠ Cannot be defended yet.** The arithmetic is provably correct (100 % test coverage, verified against the manual); the *linguistic* validity is unsupported, and one citation is overstated.
 
 **Strengthen by:** obtaining the published Vietnamese item lists, diffing them item by item into Appendix A, removing the word "official", and citing the convention's actual source.
+
+> **Largely resolved 2026-09-09 — and by an accident of the English conversion.**
+> The deployed DASS-21 wording is now the **original English instrument**
+> (Lovibond & Lovibond, 1995), verbatim, not a translation of it: item 1 "I found
+> it hard to wind down", item 2 "I was aware of dryness of my mouth", item 3
+> "I couldn't seem to experience any positive feeling at all", with the published
+> subscale assignment. The translation-fidelity question that made this risk
+> undefendable simply no longer applies, because there is no translation in the
+> deployed path. The same holds for PSS-10, which now carries Cohen's original
+> English items.
+>
+> The overstatement is also fixed: `pss10.py` no longer calls the
+> Low/Moderate/High bands "Cohen's official scoring". The docstring now separates
+> what *is* Cohen's (the ten items, the 0-4 rating, the reverse-scoring of items
+> 4/5/7/8, the 0-40 total) from what is *not* (the 13/26 cut-offs, a widely
+> reproduced convention rather than a validated clinical boundary).
+>
+> **What remains open.** Reference [4] (Tran et al., 2013) is still cited in the
+> literature review and still needs verification against the publisher record —
+> see [CITATIONS_TO_VERIFY.md](../report/CITATIONS_TO_VERIFY.md). It is no longer
+> load-bearing for the *deployed instrument*, only for the related-work claim
+> about Vietnamese validation.
 
 ---
 

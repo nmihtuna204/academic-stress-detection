@@ -24,7 +24,8 @@ Every number in this document was produced by executing something in this repo. 
 | [app/scoring/pss10.py](../app/scoring/pss10.py) | 100 | PSS-10 items, reverse scoring, scorer | live |
 | [app/scoring/__init__.py](../app/scoring/__init__.py) | 61 | `derive_ground_truth()` — unified 4-class label | live |
 | [app/nlp/emotion.py](../app/nlp/emotion.py) | 165 | PhoBERT stress inference, language detect, polarity | live |
-| [app/nlp/lexicon.py](../app/nlp/lexicon.py) | 105 | 112-term stress lexicon + 14-phrase crisis lexicon | live |
+| [app/nlp/lexicon.py](../app/nlp/lexicon.py) | 196 | 210-keyword bilingual stress lexicon (7 categories); `CRISIS_KEYWORDS` kept for provenance only | live |
+| [app/nlp/crisis_patterns.py](../app/nlp/crisis_patterns.py) | 208 | Six suicide-risk constructs + span-local idiom guards — what `find_crisis_keywords()` actually runs | live |
 | [app/llm/chain.py](../app/llm/chain.py) | 202 | LCEL chain `prompt \| llm \| PydanticOutputParser` | live |
 | [app/llm/safety.py](../app/llm/safety.py) | 86 | Deterministic crisis rule + Vietnamese helpline text | live |
 | [app/rag/store.py](../app/rag/store.py) | 67 | Chroma persistent client + embedding selection | live |
@@ -110,7 +111,7 @@ graph TB
     end
 
     subgraph SRV["Services"]
-        SAFE["llm/safety.check_crisis<br/>deterministic, runs FIRST"]
+        SAFE["llm/safety.check_crisis<br/>deterministic gate<br/>runs before any side effect"]
         SCORE["scoring/ dass21 + pss10<br/>derive_ground_truth"]
         NLP["nlp/emotion.analyze<br/>PhoBERT + lexicon"]
         RAG["rag/retriever.retrieve k=4"]
@@ -300,7 +301,7 @@ That measurement is the project's best piece of scientific honesty — and also 
 | 2 | Related-work grounding | **1/5** | Essentially absent. The only citations anywhere are Lovibond & Lovibond (1995) and "Tran et al., 2013" in docstrings and `data/knowledge/05_dass_pss_scales.md` — both `[UNVERIFIED]`. No literature review, no comparative table, no research-gap statement. |
 | 3 | Methodological soundness | **3/5** | Pipeline design is sound and each decision is logged in [DECISIONS.md](../DECISIONS.md) — genuinely above average. Undercut by: a project-invented 4-class composite label with no validation, template-derived training data, and no reconciliation rule when the LLM contradicts the validated instrument (§5.1). |
 | 4 | Experimental rigour | **2/5** | Two baselines actually ran (`tfidf_lr`, `phobert_ft`); two are wired but produced no numbers (no API key). Ablation harness exists, has never run. **Single seed. No majority-class baseline in the 4-class harness, no SVM, no few-shot, no XLM-R. No confidence intervals, no McNemar, no significance testing anywhere.** |
-| 5 | Implementation quality | **4/5** | 279 tests, all passing (2026-09-08; was 198); 83 % coverage on `app/`; clean layering; graceful degradation at every external boundary; CI with ruff + pytest; Docker + compose. Deductions: unpinned deps, two undeclared runtime deps, the whole UI redesign uncommitted. |
+| 5 | Implementation quality | **4/5** | 337 tests, all passing (2026-09-10; was 198); 94 % coverage on `app/` excluding the offline evaluation tooling, 70 % including it; clean layering; graceful degradation at every external boundary; CI with ruff + pytest; Docker + compose. Deductions: unpinned deps, two undeclared runtime deps, the whole UI redesign uncommitted. |
 | 6 | Evaluation of the LLM/RAG layer | **1/5 → 3/5** (2026-09-08) | *Originally: "Nothing."* Since then: retrieval is measured over 57 labelled queries (MRR 0.787, Recall@5 0.903) with a paired experiment showing the old query construction cost 0.33 MRR; the zero-shot LLM baseline has run; and every deterministic stage is now timed (`latency.md`). Still missing: faithfulness/groundedness judging, an LLM red-team suite, token/cost accounting, and the ablation — all blocked on provider quota rather than on code. |
 | 7 | Safety & ethics | **3/5** | Deterministic pre-LLM crisis gate, unavoidable disclaimers, anonymous UUIDs, honest measurement of the rule's own failure — all strong. Offset by recall 0.50, in-app consent that omits third-party transmission, no deletion, no encryption, no `docs/ETHICS.md`. |
 | 8 | Reproducibility | **3/5** | Frozen split, seeded generator, deterministic LLM caching, idempotent ingestion, exact evaluated dataframe written on every run — all good practice. Broken by: **the missing `stress_dataset_clean.csv` build script**, unpinned versions, and `data/eval/` being gitignored so no result artefact is under version control. *Improved 2026-09-08: the evaluation harness now retrieves through the production `build_rag_query()` — it previously used its own query shape, which returned a different top-4 chunk set on 53 % of items, so the proposed system was scored on a retrieval path the app never runs. Unparseable replies are also retained and classified now, rather than counted and discarded.* |

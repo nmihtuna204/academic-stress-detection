@@ -27,9 +27,10 @@ Streamlit UI (English, multipage)             FastAPI backend
         ┌───────────────┬───────────────┬───────────┼───────────────┐
         ▼               ▼               ▼           ▼               ▼
   Crisis rule     Scoring engines   NLP (PhoBERT   ChromaDB RAG   LangChain +
-  (deterministic, (DASS-21/PSS-10,  stress clf +   (English       OpenAI
-  runs first)     ground truth)     bilingual      knowledge      (structured
-                                    lexicon)       base)          JSON output)
+  (deterministic  (DASS-21/PSS-10,  stress clf +   (English       LLM provider
+  gate: runs      ground truth)     bilingual      knowledge      (structured
+  before any side                   lexicon)       base)          JSON output)
+  effect)
                                         └──────── SQLite via SQLAlchemy ───────┘
 ```
 
@@ -221,7 +222,7 @@ tests/              pytest suite
 - **Right to withdraw**: `DELETE /session/{student_id}` erases every row for an
   anonymized id, exposed as a two-step control on the History page.
 - **Consent gate** before any data entry; only anonymized UUIDs are stored. The
-  in-app consent states third-party (OpenAI) processing, the retention period,
+  in-app consent states third-party processing (the provider is named at runtime from the configured endpoint — currently Groq), the retention period,
   and the right to erase.
 - **Privacy**: the LLM prompt contains the free text, scores, and non-identifying
   context only — never IDs or demographic identifiers.

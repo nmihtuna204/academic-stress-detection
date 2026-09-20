@@ -126,8 +126,8 @@ def measure_offline_stages(texts: list[str], repeats: int) -> list[StageTiming]:
 
     df = pd.read_csv(SYNTHETIC_CSV).head(max(repeats, 1))
 
-    crisis = StageTiming("crisis rule", note="deterministic phrase match, runs first")
-    lexicon = StageTiming("lexicon keywords", note="112-term stress lexicon")
+    crisis = StageTiming("crisis rule", note="deterministic pattern match (6 constructs); the gate before any side effect")
+    lexicon = StageTiming("lexicon keywords", note="210-keyword bilingual stress lexicon")
     phobert = StageTiming("PhoBERT inference", note="skipped on English input by design")
     scoring = StageTiming("DASS-21 + PSS-10 scoring", note="pure arithmetic")
     retrieval = StageTiming("RAG retrieval (k=4)", note="Chroma query + embedding")
