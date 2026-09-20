@@ -18,7 +18,8 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.dml import MSO_LINE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
 REPORT_DIR = Path(__file__).resolve().parent
@@ -197,13 +198,63 @@ def section_slide(prs, number, title, subtitle=""):
     return slide
 
 
+def figure_slide(prs, title, caption, placeholder, *, eyebrow=None, backup=False):
+    """A slide whose body is a dashed frame the author pastes a PNG into.
+
+    The frame is a real shape, not a picture placeholder: it renders in every
+    viewer, carries the file name it expects, and is meant to be deleted once
+    the image is pasted over it. `backup=True` marks the slide as Q&A material
+    that is not part of the timed talk.
+    """
+    slide = blank(prs)
+
+    top = Inches(0.55)
+    if eyebrow:
+        eb = _txbox(slide, MARGIN, top, CONTENT_W, Inches(0.3))
+        _para(eb, eyebrow.upper(), 12, bold=True, color=ACCENT, first=True, space_after=0)
+        top = Inches(0.9)
+
+    tf = _txbox(slide, MARGIN, top, CONTENT_W, Inches(0.8))
+    _para(tf, title, 30, bold=True, color=INK, first=True, space_after=0)
+
+    rule = slide.shapes.add_shape(1, MARGIN, top + Inches(0.72), Inches(1.4), Emu(28575))
+    rule.fill.solid()
+    rule.fill.fore_color.rgb = ACCENT
+    rule.line.fill.background()
+
+    box_top = top + Inches(1.0)
+    box_h = Inches(4.35)
+    box = slide.shapes.add_shape(1, MARGIN, box_top, CONTENT_W, box_h)
+    box.fill.solid()
+    box.fill.fore_color.rgb = SURFACE
+    box.line.color.rgb = ACCENT
+    box.line.width = Pt(1.5)
+    box.line.dash_style = MSO_LINE.DASH
+    frame = box.text_frame
+    frame.word_wrap = True
+    frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _para(frame, placeholder, 22, bold=True, color=MUTED, first=True,
+          align=PP_ALIGN.CENTER, space_after=6)
+    _para(frame, "paste the PNG here, then delete this frame", 13, color=MUTED,
+          align=PP_ALIGN.CENTER, space_after=0)
+
+    cap = _txbox(slide, MARGIN, box_top + box_h + Inches(0.1), CONTENT_W, Inches(0.5))
+    _para(cap, caption, 13, color=MUTED, first=True, space_after=0)
+
+    if backup:
+        ff = _txbox(slide, MARGIN, Inches(6.85), CONTENT_W, Inches(0.35))
+        _para(ff, "BACKUP — for Q&A, not part of the timed talk", 11, bold=True,
+              color=WARNING, first=True, space_after=0)
+    return slide
+
+
 # ---------------------------------------------------------------------------
 # Deck
 # ---------------------------------------------------------------------------
 
 
 def build(prs: Presentation) -> None:
-    """The 15-slide defence deck.
+    """The defence deck: 17 talk slides plus 2 backup figure slides for Q&A.
 
     Rebuilt 2026-09-09 against the current state of the project. Every figure
     here is taken from an artefact in `data/eval/`, and where a measurement does
@@ -266,8 +317,8 @@ def build(prs: Presentation) -> None:
         ],
         eyebrow="scope",
         footer="O2 and O3 are only partly met, and this slide says so before the results do. "
-               "Slides 10 and 14 give the reasons: a provider quota limit, and an ablation that "
-               "has not run.",
+               "Slide 13 gives the reason: three of five ablation configurations ran; the other "
+               "two are blocked by a schema defect, not by quota.",
     )
 
     # ---------------------------------------------------------------- 4 architecture
@@ -275,34 +326,49 @@ def build(prs: Presentation) -> None:
         prs,
         "Deterministic core, generative periphery",
         [
-            ("head", "Crisis rule  →  Scoring  →  Classifier  →  Retrieval  →  Generation"),
+            ("head", "Classifier + scoring (pure)  →  Crisis gate  →  Persist  →  Retrieval  →  Generation"),
             ("bullet", "The ordering is a safety property, not an engineering convenience."),
-            ("sub", "The crisis rule runs before the model and before anything is written to disk."),
-            ("sub", "Scoring is arithmetic: it always produces a result."),
-            ("sub", "The classifier degrades to lexicon matching if the model is unavailable."),
+            ("sub", "Everything before the gate is a pure function: it cannot store, send or show anything."),
+            ("sub", "Nothing is written to disk and no external service is called until the gate has cleared."),
+            ("sub", "Scoring is arithmetic and always produces a result; the classifier degrades to the lexicon."),
             ("sub", "Retrieval and generation are last precisely because they can fail unpredictably."),
-            ("good", "Read the pipeline left to right as decreasing reliability AND decreasing "
-                     "authority. The most trustworthy component runs first and can pre-empt "
-                     "everything after it."),
+            ("good", "Read left to right as decreasing reliability AND decreasing authority. The gate "
+                     "is the only component that can pre-empt everything after it — and it costs 0.05 ms."),
             ("note", "If generation fails the system returns its deterministic results and says why. "
                      "It does not return an error, and it does not guess."),
         ],
         eyebrow="architecture",
-        footer="Figure: system architecture",
+        footer="The figure on the next slide draws this order exactly as the code executes it.",
     )
 
-    # ---------------------------------------------------------------- 5 data
+    # ---------------------------------------------------------------- 5 FIGURE 1
+    figure_slide(
+        prs,
+        "System architecture",
+        "Left of the gate: pure functions that cannot store, send or show anything. "
+        "Right of the gate: persistence, retrieval and generation — none of which run "
+        "until the gate has cleared. Generation is the only external, non-authoritative stage.",
+        "insert fig_1.png",
+        eyebrow="architecture · figure",
+    )
+
+    # ---------------------------------------------------------------- 6 data
     content_slide(
         prs,
-        "The data, and a label that is my own invention",
+        "Ground truth: a conservative composite of two validated instruments",
         [
-            ("bullet", "466 synthetic students · frozen split 326 / 70 / 70 · seed 42"),
-            ("bullet", "Ground truth: four classes, from the MORE SEVERE of the DASS-21 stress "
-                       "subscale and the PSS-10 category."),
-            ("sub", "Deliberately conservative: in screening a false alarm is cheaper than a miss."),
-            ("warn", "DASS-21 is validated. PSS-10 is validated. Combining them into one four-class "
-                     "label is a decision of this project and carries no independent psychometric "
-                     "validation. I state that rather than having solved it."),
+            ("bullet", "466 records · frozen split 326 / 70 / 70 · seed 42"),
+            ("head", "How the four-class label is defined"),
+            ("bullet", "The more severe of the DASS-21 stress subscale band and the PSS-10 "
+                       "category, mapped onto Low / Moderate / High / Severe."),
+            ("sub", "Chosen for screening asymmetry: a false alarm costs a student a helpline they "
+                    "did not need; a miss costs a student support they did."),
+            ("bullet", "Both source instruments are published and validated — DASS-21 "
+                       "(Lovibond & Lovibond, 1995) and PSS-10 (Cohen et al., 1983), deployed as "
+                       "the original English items."),
+            ("warn", "Stated limitation: the composite itself has not been separately validated "
+                     "as a psychometric scale. It is an operational outcome measure defined for "
+                     "this study, and §5.4 treats it as a construct-validity threat."),
             ("note", "The split is frozen and reused everywhere, because the classifier was "
                      "fine-tuned on its training portion — redrawing it would leak training data "
                      "into the test set."),
@@ -357,7 +423,7 @@ def build(prs: Presentation) -> None:
         "Fixing it honestly was harder than fixing it",
         [
             ("bad", "The twelve failures were already published. Adding them to the phrase list "
-                    "would have been tuning against my own test set."),
+                    "would have meant tuning against the test set."),
             ("head", "The order is what makes the number mean something"),
             ("bullet", "1.  Wrote a NEW 60-item bilingual set and froze it, SHA-256 recorded, "
                        "before the new rule existed."),
@@ -367,15 +433,26 @@ def build(prs: Presentation) -> None:
             ("bullet", "4.  Demoted the two older sets to DEVELOPMENT sets."),
             ("good", "Re-measuring the held-out set afterwards gave IDENTICAL numbers — the "
                      "development work had no detectable effect on it."),
-            ("warn", "I wrote both the patterns and the held-out set. An independent annotator "
-                     "would be stronger evidence."),
+            ("warn", "Limitation: the patterns and the held-out set share a single author. "
+                     "Independent annotation would strengthen the result."),
         ],
         eyebrow="method",
         footer="Vietnamese perfect score (1.000/1.000) is a DEVELOPMENT number and is deliberately "
                "not the headline.",
     )
 
-    # ---------------------------------------------------------------- 9 grounding
+    # ---------------------------------------------------------------- 10 FIGURE 3
+    figure_slide(
+        prs,
+        "How the safety rule was rebuilt — the order, made visible",
+        "Held-out set written and frozen (SHA-256 recorded) before the new rule existed; "
+        "patterns derived from six clinical constructs, not from failing items; measured once; "
+        "the older sets demoted to development sets. Re-measuring afterwards gave identical numbers.",
+        "insert fig_3.png",
+        eyebrow="safety · figure",
+    )
+
+    # ---------------------------------------------------------------- 11 grounding
     content_slide(
         prs,
         "What stops the model inventing mental-health advice",
@@ -407,13 +484,13 @@ def build(prs: Presentation) -> None:
             ["TF-IDF + SVM", "0.6571", "0.6524"],
             ["PhoBERT, fine-tuned", "0.6571", "0.5329"],
             ["LLM zero-shot", "0.5286", "0.5238"],
-            ["Proposed (full pipeline)", "—", "not run"],
+            ["Proposed (full pipeline)", "0.4857", "0.5000"],
         ],
         eyebrow="results",
         highlight=1,
-        footer="n = 70 · single seed · synthetic data · openai/gpt-oss-120b via Groq. "
-               "The classical baseline wins, and slide 14 explains why that is a statement about "
-               "the DATA rather than about transformers.",
+        footer="n = 70 · single seed · synthetic data · openai/gpt-oss-120b via Groq · every system "
+               "clean (0 unusable responses). The classical baseline wins, and slide 16 explains why "
+               "that is a statement about the DATA rather than about transformers.",
     )
 
     # ---------------------------------------------------------------- 11 retrieval
@@ -445,8 +522,8 @@ def build(prs: Presentation) -> None:
             ("bullet", "RAG retrieval, k = 4              28.0 ms"),
             ("bullet", "PhoBERT inference                59.3 ms"),
             ("good", "The entire deterministic pipeline costs under 90 ms at the median."),
-            ("good", "Running the safety rule before everything else — including before persistence "
-                     "— costs 0.05 ms. There is no performance argument against that ordering."),
+            ("good", "Running the safety gate before any side effect — before persistence and before the "
+                     "external call — costs 0.05 ms. There is no performance argument against that ordering."),
             ("note", "Cold start is ≈ 21 s for both models, paid once per process, which is why the "
                      "API loads them lazily rather than in the startup hook. Generation latency and "
                      "token cost are not measured: each sample is a billable request."),
@@ -460,22 +537,23 @@ def build(prs: Presentation) -> None:
         prs,
         "Why these numbers can be trusted",
         [
-            ("good", "334 tests, all passing · 83 % coverage on the application package · CI runs "
+            ("good", "337 tests, all passing · 94 % coverage on the application code (70 % once the "
+                     "offline evaluation scripts are included) · CI runs "
                      "lint and the full suite."),
-            ("good", "Frozen split · seeded generation · language-model responses cached by input "
-                     "hash, so a repeated evaluation performs zero API calls and returns identical "
-                     "results."),
-            ("head", "The part that matters for a research artefact"),
+            ("good", "Frozen split · seeded generation · model responses cached by input hash, so a "
+                     "repeated evaluation makes zero API calls and returns identical results."),
+            ("head", "What matters for a research artefact"),
             ("bullet", "No number in the report exists without a script that produced it."),
-            ("bullet", "Where something has not been measured, the tooling writes an explicit "
-                       "\"NOT RUN\" marker rather than letting a gap look like a zero."),
-            ("head", "One example of that discipline paying for itself"),
-            ("bullet", "The harness used to count failed model responses and then throw them away. "
-                       "It now keeps and classifies them. On the very next run it recorded 32 "
-                       "failures — of which 31 were rate-limit refusals and exactly ONE was "
-                       "malformed JSON."),
-            ("warn", "The report had claimed seven responses \"were not valid JSON\". That claim was "
-                     "never evidence-based, and it has been corrected."),
+            ("bullet", "Where nothing was measured, the tooling writes an explicit \"NOT RUN\" marker "
+                       "rather than letting a gap look like a zero."),
+            ("head", "That discipline paying for itself, twice"),
+            ("bullet", "Failed model responses used to be counted and discarded; they are now kept and "
+                       "classified. The next run recorded 32 failures — 31 rate-limit refusals and ONE "
+                       "malformed JSON. The report's earlier \"seven invalid JSON\" claim was never "
+                       "evidence-based and has been corrected."),
+            ("bullet", "All five flagged references were checked against publisher and ACL Anthology "
+                       "records; eight now carry a DOI. Two were wrong and are corrected — the third "
+                       "author of [4], the author list of [12]."),
         ],
         eyebrow="reproducibility",
     )
@@ -495,7 +573,7 @@ def build(prs: Presentation) -> None:
             ("bullet", "It is being asked to recognise templates it has already seen in a slightly "
                        "different arrangement. Every text-classification figure in this project is a "
                        "pipeline demonstration, not evidence of stress-detection ability."),
-            ("note", "It is also the honest explanation for why TF-IDF wins on slide 10: a bag of "
+            ("note", "It is also the honest explanation for why TF-IDF wins on slide 12: a bag of "
                      "n-grams is exceptionally good at recognising recurring surface forms."),
         ],
         eyebrow="limitations",
@@ -524,6 +602,51 @@ def build(prs: Presentation) -> None:
         ],
         eyebrow="conclusion",
         footer="Thank you — questions welcome.",
+    )
+
+    # ---------------------------------------------------------------- 18 BACKUP FIGURE 2
+    figure_slide(
+        prs,
+        "Where the headline label comes from",
+        "The validated instrument owns the headline: the more severe of the DASS-21 stress band "
+        "and the PSS-10 category. The model reads the same evidence and gives its own reading; "
+        "where the two differ, the student is told so explicitly rather than the difference being hidden.",
+        "insert fig_2.png",
+        eyebrow="fusion · figure",
+        backup=True,
+    )
+
+    # ---------------------------------------------------------------- 20 BACKUP ablation
+    table_slide(
+        prs,
+        "Ablation: what each component is actually worth",
+        ["Configuration", "Macro-F1", "Δ vs full"],
+        [
+            ["full", "0.534", "—"],
+            ["no_questionnaire", "0.123", "−0.411"],
+            ["no_emotion", "0.593", "+0.059  (inside noise)"],
+            ["no_rag", "not run", "schema defect"],
+            ["text_only", "not run", "schema defect"],
+        ],
+        eyebrow="ablation · backup",
+        highlight=1,
+        footer="n = 40, stratified, seed 42 · noise floor ±0.148 (95 % Wilson). Removing the "
+               "questionnaire collapses the system to the majority floor (0.1237) — the 0.500 it "
+               "scores on slide 12 comes from being shown the scores that define the label, not "
+               "from reading text. The no_emotion delta is inside the noise floor, so no direction "
+               "is claimed. BACKUP — promote after slide 12 if time allows.",
+    )
+
+    # ---------------------------------------------------------------- 19 BACKUP FIGURE 4
+    figure_slide(
+        prs,
+        "Evidence provenance",
+        "Every number on a slide traces to a committed source file, the script that consumed it, "
+        "and the artefact it wrote. Where a measurement has not been made, the artefact is an "
+        "explicit NOT RUN marker rather than an empty cell that could be mistaken for a zero.",
+        "insert fig_4.png",
+        eyebrow="reproducibility · figure",
+        backup=True,
     )
 
 

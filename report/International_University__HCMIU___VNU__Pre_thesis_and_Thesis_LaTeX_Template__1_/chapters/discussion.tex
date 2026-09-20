@@ -1,0 +1,99 @@
+This chapter interprets the results of Chapter~\ref{ch:result}, states the strengths and limitations of the work, positions it against related work, and sets out future work.
+
+\section{Analysis}
+
+\subsection{Why the classical baseline wins}
+The headline result is uncomfortable and should be stated plainly: \textbf{a TF-IDF linear model outperforms the fine-tuned Vietnamese transformer} on the four-class task (macro-F1 0.682 against 0.533). Three factors explain this, and separating them matters.
+
+\textbf{A structural class deficit.} PhoBERT has three output classes and the evaluation space has four. Its F1 on Severe is zero by construction, which alone can lower a four-class macro average by up to 0.25. On the three classes it can predict, it matches or beats TF-IDF on every one (0.842 vs.\ 0.821 on Low, 0.681 vs.\ 0.651 on Moderate, 0.609 vs.\ 0.588 on High). Retraining with four classes is the correct remedy.
+
+\textbf{An intrinsic label ceiling.} Because text band and label are separate noisy functions of the latent variable (Table~\ref{tab:band}), a perfect text-band classifier would score only about 0.79 accuracy. TF-IDF's 0.686 therefore recovers roughly 87\,\% of the recoverable signal, and most of the apparent headroom is illusory. This also explains PhoBERT's higher score on its own three-class task, whose label is better aligned with the text band.
+
+\textbf{The register of the data.} Template-generated text is a distribution over recurring phrases, for which word bigrams are close to ideal. A transformer's strengths - paraphrase, composition, context - have nothing to work on. This is the factor expected to reverse on real student writing, and the near-duplicate measurement (34 of 70 test items above 0.80 similarity) confirms that the task being measured is largely template recognition.
+
+\subsection{Error analysis}
+Of the 22 TF-IDF errors, 21 are between adjacent classes. The dominant confusions are Moderate predicted as Low (7), High predicted as Moderate (6) and High predicted as Severe (6). Two representative errors:
+
+\begin{enumerate}
+	\item \textit{``\vi{Tâm trạng mình dạo này khá tốt. Bài vở không quá nhiều nên mình có thời gian nghỉ ngơi.}''} (``My mood has been quite good lately. There is not too much coursework so I have time to rest.'') - true \textbf{Moderate}, predicted \textbf{Low}. The prediction is arguably the correct reading of the text; the error comes from the label-noise mechanism above.
+	\item \textit{``\vi{Mấy tuần nay mình thấy hơi quá tải. Chủ yếu là do bài tập và deadline dồn dập.}''} (``These past weeks I have felt a bit overloaded, mainly because of piled-up assignments and deadlines.'') - true \textbf{High}, predicted \textbf{Moderate}. Hedging language (\vi{hơi quá tải}, ``a bit overloaded'') accompanies high-stress content - precisely what a stronger text model should resolve.
+\end{enumerate}
+
+\subsection{The proposed pipeline and circularity}
+The full pipeline scores below zero-shot prompting, and the ablation shows why its score should not be read as text understanding: without the questionnaire scores it falls to the majority-class floor. The LLM is therefore not adding classification value on this dataset. This is consistent with Strategy~3 (Section~4.2.3): the design already restricts the LLM to explanation and suggestions, and takes the headline from the validated instrument. The results support that decision rather than undermining it.
+
+\subsection{Safety and retrieval}
+The crisis rule shows that a pattern-based rule, organised by clinical construct rather than by fixed phrases, can move from detecting almost no indirect ideation to detecting most of it without losing precision. Its remaining misses (a balcony railing, counting pills) express risk through \textit{situations} rather than statements, which a pattern rule cannot generalise to; this is the natural boundary of the approach. The retrieval experiment is the clearest case in the project of a measurement changing the system: a plausible, never-questioned query construction was costing about a third of retrieval effectiveness wherever it fired.
+
+\section{Strengths}
+\begin{itemize}
+	\item \textbf{A complete, working system.} Consent, two validated instruments, bilingual text analysis, grounded advice, history and deletion run end to end, with 341 passing tests and 94\,\% coverage of application code.
+	\item \textbf{Safety by architecture, not by prompt.} The crisis gate is deterministic, costs 0.05\,ms, and runs before any storage or external call; crisis disclosures are never persisted.
+	\item \textbf{The validated instrument owns the headline}, and the LLM cannot silently override it.
+	\item \textbf{Grounding checked in code.} Citations are verified against what was retrieved, and generation is refused when nothing is retrieved.
+	\item \textbf{Methodological honesty.} The crisis held-out set was frozen before the rule was written; gaps are recorded as ``not run'' instead of estimated; unflattering results are reported as they are.
+	\item \textbf{Graceful degradation.} Every unreliable component can fail without the student losing their questionnaire result.
+	\item \textbf{Low operating cost.} The deterministic path runs on CPU in under 90\,ms, and the configured LLM provider's free tier costs nothing per session.
+\end{itemize}
+
+\section{Limitations}
+\label{sec:limitations}
+
+\subsection{Data}
+\textbf{The dataset is the binding limitation.} Training \textit{and} evaluation text are synthetic, generated from 41 templates, and nearly half of the test items are near-copies of training items even though exact-duplicate leakage is zero. Every classification figure therefore measures template recognition and must not be read as evidence of stress-detection ability. No human participant has contributed data.
+
+\subsection{Evaluation}
+\begin{itemize}
+	\item \textbf{Faithfulness is unmeasured.} Citations are verified, but whether a cited passage truly supports the sentence citing it has not been measured.
+	\item \textbf{Single-author test sets.} The crisis held-out set and the retrieval query labels were written by the same person who built the system; there is no inter-annotator agreement.
+	\item \textbf{No statistical treatment.} All results are single-seed, without confidence intervals or significance tests; the ablation uses only 40 items.
+	\item \textbf{Two ablations did not run} because of the schema--grounding mismatch described in Section~\ref{sec:res-ablation}.
+	\item \textbf{The English path of the classifier is unevaluated.} PhoBERT runs only on Vietnamese input, so English submissions use the lexicon path, which no classification experiment covers.
+\end{itemize}
+
+\subsection{Construct validity}
+The four-level composite label (Equation~\eqref{eq:label}) is an invention of this project with no psychometric validation. The PSS-10 bands are a convention, not published clinical cut-offs. The knowledge base was written for this project rather than sourced from reviewed material, and no clinician has reviewed any output.
+
+\subsection{Privacy and deployment}
+Three gaps remain between the implementation and the consent instrument. The history endpoint is \textbf{unauthenticated}: protection rests on the unguessability of a random UUID, not on access control. The 12-month retention period is stated but \textbf{not enforced automatically}; deletion is participant-initiated only. Demographics (age, gender, year, major, university) are retained, so within a small programme the data is \textit{pseudonymous} rather than anonymous. The generative component is a third-party service whose behaviour may change without notice. \textbf{The system should not be deployed to real students} until the crisis rule is validated by an independent annotator, access control and automatic retention are in place, and institutional ethics review is complete, with a named human counsellor as the escalation route.
+
+\section{Comparison}
+Table~\ref{tab:compare} positions this work against published work. The figures are \textbf{not comparable}, and no claim of superiority or parity is made: the languages, label spaces, text registers, annotation processes and data provenance all differ, and this work's data is synthetic. The table is a positioning device, not a leaderboard.
+
+\begin{table}[ht]
+	\centering
+	\caption{Positioning against published related work.}
+	\label{tab:compare}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{lllll}
+			\toprule
+			Work                                  & Language   & Data                            & Task                          & Relation to this work \\ \midrule
+			Turcan \& McKeown~\cite{turcan2019}   & English    & Reddit, human-annotated         & Binary stress                 & Closest task; different language, register, labels \\
+			Coppersmith et al.~\cite{coppersmith2015} & English & Twitter, human-annotated        & Depression / PTSD             & Different construct and register \\
+			Losada \& Crestani~\cite{losada2016}  & English    & Reddit, sequential              & Early risk detection          & No longitudinal data here \\
+			Nguyen \& Nguyen~\cite{nguyen2020phobert} & Vietnamese & General Vietnamese benchmarks & POS, NER, NLI                 & Same encoder, different task \\
+			Lewis et al.~\cite{lewis2020rag}      & English    & Wikipedia                       & Open-domain QA                & Same architecture, advisory use here \\ \midrule
+			\textbf{This work}                    & \textbf{Vietnamese / English} & \textbf{Synthetic, 41 templates} & \textbf{4-level academic stress} & \textbf{Macro-F1 0.682 (TF-IDF), 0.533 (PhoBERT)} \\ \bottomrule
+		\end{tabular}%
+	}
+\end{table}
+
+What distinguishes this work is not a metric but a combination: validated psychometric scoring, Vietnamese text analysis, grounded generation with verified citations, and a measured bilingual crisis gate in one system (Table~\ref{tab:gap}).
+
+\section{Future Work}
+Items are ordered by expected evidential value relative to cost; the first two are planned for the thesis phase.
+
+\begin{enumerate}
+	\item \textbf{Run the real-data study.} The consent form, participant instructions, anonymised export, quality screening and an identical \code{--dataset real} evaluation path already exist. Recruiting 150--300 consenting students and re-running every evaluation would turn the classification results from a pipeline demonstration into evidence.
+	\item \textbf{Validate the crisis rule independently.} Have an independent annotator write a new held-out set, measure once, and consider a small supervised classifier as a second, recall-oriented layer behind the pattern rule.
+	\item \textbf{Measure faithfulness.} Add an LLM-as-judge rubric over at least 50 generated answers, with a 20-item human-labelled subset to measure judge--human agreement.
+	\item \textbf{Fix the schema--grounding mismatch} by allowing an empty suggestion list with a stated reason, then run the \code{no\_rag} and \code{text\_only} ablations.
+	\item \textbf{Retrain PhoBERT with four classes}, add XLM-R and few-shot LLM baselines, and run the word-segmentation ablation with VnCoreNLP applied at both training and inference.
+	\item \textbf{Add statistical treatment}: three seeds with mean and standard deviation, bootstrap 95\,\% confidence intervals for macro-F1, and McNemar's test against the strongest baseline.
+	\item \textbf{Tune retrieval}: a similarity threshold or a sweep of $k$ against faithfulness, and a better query for questionnaire-only submissions.
+	\item \textbf{Close the privacy gaps}: authentication and encryption at rest for history, automatic 12-month expiry, and coarser demographics.
+	\item \textbf{Human evaluation}: rate explanations for accuracy, helpfulness and respectfulness with three raters (Krippendorff's $\alpha$), and administer the SUS.
+	\item \textbf{Clinician-in-the-loop review} of generated assessments and crisis decisions, and institutional ethics approval before any live use.
+\end{enumerate}
+
+Longer-term directions include multi-task prediction of the DASS-21 subscales instead of one composite, fully on-device inference to remove third-party transmission, and longitudinal tracking to detect change over a semester rather than a single point in time.

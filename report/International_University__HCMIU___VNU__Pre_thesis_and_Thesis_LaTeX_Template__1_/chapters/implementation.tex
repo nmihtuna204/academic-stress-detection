@@ -1,0 +1,143 @@
+This chapter describes how the architecture of Chapter~\ref{ch:proto} was built: the technology stack, the backend and scoring engine, dataset generation, text analysis and fine-tuning, the retrieval and generation modules, the crisis rule, persistence, the user interface, deployment, and testing.
+
+\section{Technology Stack}
+Table~\ref{tab:stack} lists the technologies actually used. The repository is organised into \code{app/} (scoring, NLP, LLM, RAG, API, schemas, persistence, evaluation), \code{streamlit\_app/} (pages and a small design-system package), \code{research/} (dataset generation and fine-tuning scripts), \code{scripts/} (export, data-quality and leakage tools), \code{tests/}, \code{data/} and \code{docs/}.
+
+\begin{table}[ht]
+	\centering
+	\caption{Technology stack.}
+	\label{tab:stack}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		Layer            & Technology                                     & Role \\ \midrule
+		Frontend         & Streamlit, Plotly                              & Seven-page English interface and charts \\
+		Backend          & FastAPI, Uvicorn                               & Six HTTP endpoints, async \\
+		Validation       & Pydantic v2, pydantic-settings                 & Schemas, LLM output parsing, configuration \\
+		Persistence      & SQLAlchemy 2.0, SQLite                         & Five-table relational schema \\
+		Text model       & \code{vinai/phobert-base}, Transformers, PyTorch & Stress classification (CPU) \\
+		Vector store     & ChromaDB                                       & 23-chunk knowledge index, cosine HNSW \\
+		Embeddings       & \code{paraphrase-multilingual-MiniLM-L12-v2}   & Multilingual sentence encoding \\
+		LLM orchestration & LangChain (LCEL)                              & \code{prompt | llm | parser} chain \\
+		LLM              & \code{openai/gpt-oss-120b} via Groq            & Explanation and suggestions (temperature 0.2) \\
+		Classical ML     & scikit-learn                                   & TF-IDF baselines and metrics \\
+		Quality          & pytest, pytest-cov, Ruff, GitHub Actions       & 341 tests, linting, CI \\
+		Packaging        & Docker, Docker Compose                         & Reproducible deployment \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{Backend API and Scoring Engine}
+The FastAPI application exposes the endpoints in Table~\ref{tab:endpoints}. Each assessment endpoint delegates to the service layer (\code{app/api/services.py}), whose \code{run\_full\_assessment} function implements Algorithm~\ref{alg:pipeline}; its crisis-gate section is reproduced in Listing~\ref{lst:pipeline}.
+
+\begin{table}[ht]
+	\centering
+	\caption{HTTP endpoints.}
+	\label{tab:endpoints}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		Method & Path                              & Purpose \\ \midrule
+		GET    & \code{/health}                    & Liveness check used by the container health probe \\
+		POST   & \code{/assess/text}               & Text-only assessment \\
+		POST   & \code{/assess/questionnaire}      & DASS-21 and/or PSS-10 scoring only \\
+		POST   & \code{/assess/full}               & Full pipeline: text, questionnaires, context, retrieval, LLM \\
+		GET    & \code{/history/\{student\_id\}}   & Past assessments for one anonymous ID \\
+		DELETE & \code{/session/\{student\_id\}}   & Erase every row for one anonymous ID across all five tables \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+The scoring engine (\code{app/scoring/}) implements Equations~\eqref{eq:dass} and~\eqref{eq:pss} and the label mapping of Equation~\eqref{eq:label} as pure functions (Listings~\ref{lst:label} and~\ref{lst:pss}). Both scorers reject any input that is not exactly the expected item set with values in range, including a guard against Python's \code{bool} being accepted as an \code{int}. This strictness is intentional: a silently mis-scored screening instrument is worse than a rejected request. The deployed items are the original published English wording of both instruments (Appendix~\ref{app:items}).
+
+\section{Dataset Generation}
+The synthetic dataset is produced by \code{research/generate\_dataset.py} following Equation~\eqref{eq:gen}, deduplicated, split and frozen as shown in Figure~\ref{fig:datapipeline}. The split file is reused by every experiment, and \code{scripts/check\_leakage.py} audits it for near-duplicates. Text is NFC-normalised for lexicon matching. Vietnamese word segmentation is deliberately \textit{not} applied, at either fine-tuning or inference: applying it at only one stage would create a silent train/inference mismatch, while omitting it at both is uniformly suboptimal and is listed as a future ablation.
+
+\diagram{diagram_data_pipeline.png}{1.0}{Dataset generation, splitting and downstream use.}{fig:datapipeline}
+
+\section{Text Analysis and PhoBERT Fine-tuning}
+\code{app/nlp/emotion.py} analyses each text in three steps: language detection, stress-keyword matching against a 210-term bilingual stress lexicon in seven categories, and - only for Vietnamese or mixed input - PhoBERT stress classification. PhoBERT is not run on English input because it still returns a confident-looking label for text it cannot read, and presenting that as ``the model's stress level'' would present noise as signal. Sentiment polarity is derived from the classifier output and keyword count rather than from a separate model, which keeps the whole text-analysis stack offline.
+
+The classifier was fine-tuned with \code{research/phobert\_finetune.py} using the hyperparameters in Table~\ref{tab:hyper}, the loss of Equation~\eqref{eq:loss} and AdamW. The best checkpoint by validation macro-F1 was restored before evaluation and saved to \code{models/phobert-stress}.
+
+\begin{table}[ht]
+	\centering
+	\caption{Hyperparameters of every evaluated model.}
+	\label{tab:hyper}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		Model                    & Parameter           & Value \\ \midrule
+		TF-IDF + LogReg          & Features            & Word 1--2 grams, \code{min\_df}=2, sublinear TF \\
+		                         & Classifier          & Logistic regression, $C=5.0$, balanced class weights, 2000 iterations, seed 42 \\
+		TF-IDF + SVM             & Classifier          & Linear SVM on the same features, seed 42 \\
+		PhoBERT fine-tuned       & Checkpoint / classes & \code{vinai/phobert-base}; 3 classes (Low, Moderate, High) \\
+		                         & Optimisation        & AdamW, learning rate $2\times10^{-5}$, weight decay 0.01, batch 16, 4 epochs \\
+		                         & Schedule / clipping & Linear with 10\,\% warm-up; gradient $\ell_2$ norm clipped to 1.0 \\
+		                         & Sequence length     & 160 tokens (training), 256 (inference) \\
+		                         & Loss / selection    & Class-weighted cross-entropy; best validation macro-F1; seed 42 \\
+		LLM zero-shot            & Model               & \code{openai/gpt-oss-120b} (Groq), temperature 0.0 \\
+		Proposed pipeline        & Model               & Same model; temperature 0.2 in the app, 0.0 in evaluation; 60\,s timeout \\
+		Retriever                & Search              & MiniLM-L12 multilingual embeddings, cosine, $k=4$, no threshold, no re-ranking \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{Retrieval-Augmented Advisory Module}
+\subsection{Knowledge base and ingestion}
+The knowledge base consists of six English Markdown documents written for this project: academic stress and its sources; coping strategies; mental-health support resources in Vietnam; sleep and study; the DASS-21 and PSS-10 instruments; and family, financial and social-comparison pressure. \code{python -m app.rag.ingest} splits each document at second-level headings, prepends the document title to every chunk so that each chunk is self-describing, splits sections longer than 1,500 characters on paragraph boundaries, and assigns deterministic identifiers of the form \code{file.md::index}, which makes ingestion idempotent. The corpus yields \textbf{23 chunks} with a mean length of 553 characters. Figure~\ref{fig:ragpipeline} shows ingestion and query-time retrieval.
+
+\diagram{diagram_rag_pipeline.png}{1.0}{Knowledge ingestion and grounded retrieval.}{fig:ragpipeline}
+
+\subsection{Query construction and generation}
+\code{build\_rag\_query} (Listing~\ref{lst:query}) implements the query of Algorithm~\ref{alg:rag}. The retrieved passages, each prefixed by its chunk identifier, are inserted into section~5 of the prompt together with the student's text, the text-analysis summary, the questionnaire results and the context. The system prompt (Listing~\ref{lst:prompt}) sets seven rules: no diagnosis; a peer-register explanation that names the evidence used; up to three week-scale suggestions; the absolute grounding rule; citation of chunk identifiers; risk flags for concerning signs; and a predicted level from the four permitted values. The reply is parsed into the Pydantic schema of Table~\ref{tab:schema}; schema violations raise, and the service returns deterministic results instead.
+
+\begin{table}[ht]
+	\centering
+	\caption{Structured LLM output schema (\code{LlmAssessment}).}
+	\label{tab:schema}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		Field                    & Type         & Constraint \\ \midrule
+		\code{predicted\_level}  & enum         & Low, Moderate, High or Severe \\
+		\code{confidence}        & float        & $0.0$--$1.0$ \\
+		\code{reasoning}         & string       & Empathetic, non-diagnostic, names the evidence \\
+		\code{suggestions}       & list[string] & 1--5 items \\
+		\code{risk\_flags}       & list[string] & e.g. \code{severe\_sleep\_deprivation} \\
+		\code{citations}         & list[string] & Chunk identifiers; any not in the retrieved set are discarded by the service \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{Crisis Detection}
+The crisis rule is split across two modules. \code{app/nlp/crisis\_patterns.py} holds \textbf{72 bilingual regular expressions} grouped into the six constructs - explicit (24), passive wish (10), existence (7), burden (12), preparation (9) and escape (10) - and \textbf{12 idiom guards} covering classes such as exercise intensity (``killing myself at the gym''), device failure (``my laptop died''), humour, and the Vietnamese adjective-plus-\vi{muốn chết} intensifier. Its \code{find\_crisis\_matches} function (Listing~\ref{lst:crisis}) applies the span-overlap suppression of Algorithm~\ref{alg:crisis}. \code{app/llm/safety.py} combines the text matches with the two DASS-21 triggers in \code{check\_crisis} and returns the helpline message (Appendix~\ref{app:items}).
+
+\section{Persistence}
+The relational schema (Figure~\ref{fig:er}) has five tables. \code{users} is keyed by a random UUID and holds only optional demographics; no name, student number, e-mail or phone number exists anywhere in the schema. \code{text\_entries} stores the text and its analysis, \code{questionnaire\_responses} stores all 31 item answers with derived scores, \code{stress\_context} stores the optional context, and \code{predictions} stores the instrument label, the LLM's level and confidence, the retrieved context and the explanation for later evaluation. Rows are written only after the crisis gate clears, and \code{DELETE /session/\{student\_id\}} removes a student's rows from all five tables.
+
+\diagram{diagram_er.png}{0.95}{Entity--relationship diagram of the SQLite database.}{fig:er}
+
+\section{Frontend}
+The Streamlit interface implements the flow in Figure~\ref{fig:uiflow}. A gate function at the top of every page refuses to render until consent is recorded. The questionnaire pages store each answer in session state on interaction rather than inside a Streamlit form, because a form defers updates until submission and froze the completion counter at zero. The results page follows two design rules: it \textbf{never leads with a number} - it first explains in plain language what the result does and does not mean - and it \textbf{never conveys stress level by colour alone}: every level indicator carries its text label, and colour contrast ratios were measured against the page surface. Colours, spacing and typography come from a shared token file so the charts and pages stay consistent.
+
+\diagram{diagram_ui_flow.png}{1.0}{Page flow of the Streamlit interface.}{fig:uiflow}
+
+\section{Deployment and Continuous Integration}
+The system is packaged as one Docker image run as two Compose services (Figure~\ref{fig:deployment}): \code{api} (Uvicorn on port 8000, with a health check calling \code{/health}) and \code{ui} (Streamlit on port 8501), which starts only after the API reports healthy. Application data (SQLite, ChromaDB) lives in a named volume; the knowledge base and the fine-tuned model are mounted read-only. PhoBERT and the embedder are loaded lazily on first use rather than at start-up, because together they take about 21\,s to load. A GitHub Actions workflow runs Ruff and the test suite on Ubuntu with Python 3.11 and CPU-only PyTorch on every push and pull request, with \code{HF\_HUB\_OFFLINE=1} so that no test can silently download a model.
+
+\diagram{diagram_deployment.png}{0.95}{Deployment view and continuous integration.}{fig:deployment}
+
+\section{Testing}
+The test suite contains \textbf{341 tests, all passing} (40\,s on the development machine). Statement coverage is \textbf{94\,\%} of the application code, excluding the offline evaluation scripts in \code{app/eval/}, and 71\,\% including them. Coverage is highest where correctness matters most (Table~\ref{tab:coverage}). LLM tests use mocked models and need no API key; the crisis-rule tests pin both true positives and idiom negatives, and service tests assert that a crisis request writes nothing to the database.
+
+\begin{table}[ht]
+	\centering
+	\caption{Statement coverage of key modules.}
+	\label{tab:coverage}
+	\begin{tabular}{lr}
+		\toprule
+		Module                                                    & Coverage \\ \midrule
+		Scoring (\code{dass21}, \code{pss10}, label derivation)   & 100\,\%  \\
+		Crisis rule (\code{safety}, \code{crisis\_patterns})      & 100\,\%  \\
+		Retriever                                                 & 100\,\%  \\
+		Database models                                           & 100\,\%  \\
+		API (\code{main})                                         & 97\,\%   \\
+		Schemas                                                   & 97\,\%   \\
+		Assessment service                                        & 95\,\%   \\
+		LLM chain                                                 & 88\,\%   \\ \midrule
+		\textbf{Application code, excluding \code{app/eval/}}     & \textbf{94\,\%} \\ \bottomrule
+	\end{tabular}
+\end{table}

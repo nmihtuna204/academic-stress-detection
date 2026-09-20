@@ -1,0 +1,221 @@
+This chapter specifies what the system must do and how it decides. It first analyses the requirements, use cases and overall data flow, then formalises the four algorithms at the core of the system - label derivation, the assessment pipeline, crisis detection and grounded retrieval - and finally defines the evaluation design used in Chapter~\ref{ch:result}.
+
+\section{Requirement Analysis}
+Requirements were derived from the problem statement (Section~1.2), from the ethical obligations of a mental-health screening tool, and from the consent instrument written for the planned real-data study.
+
+\begin{table}[ht]
+	\centering
+	\caption{Functional requirements.}
+	\label{tab:fr}
+	\begin{tabularx}{\textwidth}{lL}
+		\toprule
+		ID   & Requirement \\ \midrule
+		FR1  & The student must give informed consent before any other page or data entry is available. \\
+		FR2  & The student can write a free-text reflection in Vietnamese or English. \\
+		FR3  & The student can complete the DASS-21 and PSS-10 with their published response anchors. \\
+		FR4  & The student can optionally provide academic, lifestyle and coping context. \\
+		FR5  & The system scores both instruments exactly as published and derives a four-level stress label. \\
+		FR6  & The system analyses the free text (stress keywords; PhoBERT stress level for Vietnamese input). \\
+		FR7  & The system checks for crisis signals and, if found, shows helplines instead of an assessment. \\
+		FR8  & The system retrieves relevant knowledge-base passages and generates an explanation and up to three suggestions citing them. \\
+		FR9  & The student can view their assessment history and trend. \\
+		FR10 & The student can permanently delete all of their stored data. \\
+		FR11 & A researcher can export an anonymised dataset and run the evaluation harness from the command line. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\begin{table}[ht]
+	\centering
+	\caption{Non-functional requirements.}
+	\label{tab:nfr}
+	\begin{tabularx}{\textwidth}{lL}
+		\toprule
+		ID   & Requirement \\ \midrule
+		NFR1 & \textbf{Safety.} The crisis check runs before any persistence and before any external call; a crisis disclosure is never stored. \\
+		NFR2 & \textbf{Non-diagnosis.} No output may name a disorder; every response carries a non-diagnostic disclaimer. \\
+		NFR3 & \textbf{Graceful degradation.} If the classifier, retriever or LLM fails, deterministic scores are still returned with a stated reason. \\
+		NFR4 & \textbf{Grounding.} Advice may only come from retrieved material; citations not in the retrieved set are discarded. \\
+		NFR5 & \textbf{Privacy.} Identity is a random UUID; no name, student number, e-mail or phone is collected or sent to the LLM. \\
+		NFR6 & \textbf{Latency.} The deterministic path (scoring, crisis rule, lexicon, retrieval, classifier) completes in well under one second on CPU. \\
+		NFR7 & \textbf{Reproducibility.} Every reported number is produced by a script on a frozen split; LLM calls are cached by input hash. \\
+		NFR8 & \textbf{Maintainability.} Automated tests and linting run in continuous integration on every push. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\subsection{Use Case Description}
+Three actors interact with the system: the \textbf{Student} (primary user), the \textbf{Researcher} (command-line access to exports and evaluation), and the \textbf{LLM provider} (an external system that generates explanations). Table~\ref{tab:uc-main} describes the central use case in detail; Table~\ref{tab:uc-other} summarises the others.
+
+\begin{table}[ht]
+	\centering
+	\caption{Use case UC6 - Receive stress assessment.}
+	\label{tab:uc-main}
+	\begin{tabularx}{\textwidth}{lL}
+		\toprule
+		Field          & Description \\ \midrule
+		Actors         & Student (primary), LLM provider (secondary) \\
+		Preconditions  & Consent given (UC1); at least free text or one questionnaire submitted. \\
+		Main flow      & 1.~Student opens the Results page. 2.~System analyses the text and scores the questionnaires. 3.~System runs the crisis check. 4.~System stores the inputs. 5.~System retrieves four knowledge passages. 6.~System asks the LLM for an explanation and suggestions. 7.~System verifies the citations. 8.~System shows the questionnaire-derived level as the headline, with the explanation, suggestions and sources. \\
+		Alternative A1 & At step 3 a crisis signal is found: the system shows helplines only; nothing is stored; steps 4--8 are skipped (UC7). \\
+		Alternative A2 & At step 5 nothing is retrieved: the LLM is not called; scores are shown with the reason advice was withheld. \\
+		Alternative A3 & At step 6 the LLM fails: scores are shown with a message that suggestions are temporarily unavailable. \\
+		Postconditions & A prediction row is stored (except in A1); the assessment appears in History. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\begin{table}[ht]
+	\centering
+	\caption{Summary of the remaining use cases.}
+	\label{tab:uc-other}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		ID   & Use case                 & Summary \\ \midrule
+		UC1  & Give informed consent    & Student ticks a six-point checklist (eligibility, non-diagnostic nature, third-party processing, retention, erasure, voluntariness). All other pages are gated on it. \\
+		UC2  & Write free text          & Student writes a reflection; optional mood prompts seed an editable first sentence. \\
+		UC3  & Complete DASS-21         & 21 items, 0--3, with a live completion counter. \\
+		UC4  & Complete PSS-10          & 10 items, 0--4; items 4, 5, 7, 8 are reverse-scored. \\
+		UC5  & Provide context          & Study hours, exam period, workload, sleep, finances, social support, coping strategies. \\
+		UC7  & Receive crisis helplines & Extends UC6 when the crisis rule fires. \\
+		UC8  & View history             & Trend chart and timeline of past assessments for the student's anonymous ID. \\
+		UC9  & Delete own data          & Two-step confirmation erases every row for the ID across all five tables. \\
+		UC10 & Export dataset           & Researcher exports an anonymised, one-row-per-participant CSV (CLI only). \\
+		UC11 & Run evaluation           & Researcher runs comparison, ablation, crisis, retrieval, latency and leakage scripts. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\subsection{Use Case Diagram}
+Figure~\ref{fig:usecase} shows the actors and use cases. The Student reaches every interactive use case; the Researcher has no access through the web interface, so the participant-facing application exposes no data-export surface.
+
+\diagram{diagram_use_case.png}{0.95}{Use case diagram of the academic stress screening system.}{fig:usecase}
+
+\subsection{System Overview}
+Figure~\ref{fig:overview} summarises the data flow. Four inputs - free text, DASS-21, PSS-10 and context - feed two independent analyses: \textit{text analysis} (stress lexicon and, for Vietnamese input, the PhoBERT classifier) and \textit{psychometric scoring}. Both feed the \textit{crisis gate}. Only when the gate is clear does the system retrieve knowledge passages and call the LLM. The headline stress level comes from the questionnaires; the LLM contributes the explanation and suggestions.
+
+\diagram{diagram_system_overview.png}{0.95}{High-level overview of inputs, processing and outputs.}{fig:overview}
+
+\section{Algorithms}
+
+\subsection{Formalizing}
+
+\subsubsection{Unified stress label}
+The two instruments measure related but different constructs and use different scales. They are mapped onto one ordinal scale $\mathcal{Y}=\{\text{Low}<\text{Moderate}<\text{High}<\text{Severe}\}$ by the mappings $\phi_{\text{DASS}}$ and $\phi_{\text{PSS}}$ in Table~\ref{tab:mapping}, and combined by taking the more severe:
+\begin{align}
+	L_{\text{inst}} = \max\big(\phi_{\text{DASS}}(\sigma_s),\ \phi_{\text{PSS}}(c)\big), \label{eq:label}
+\end{align}
+where $\sigma_s$ is the DASS-21 stress-subscale severity and $c$ the PSS-10 category. If only one instrument is completed, the maximum is over that one alone. Taking the maximum is deliberately conservative: in screening, a false positive costs a moment of reflection, while a false negative costs a missed chance to help.
+
+\begin{table}[ht]
+	\centering
+	\caption{Mapping of instrument categories onto the unified four-level scale.}
+	\label{tab:mapping}
+	\begin{tabular}{llcll}
+		\toprule
+		DASS-21 stress severity & $\phi_{\text{DASS}}$ & & PSS-10 category & $\phi_{\text{PSS}}$ \\ \midrule
+		Normal                  & Low                  & & Low             & Low                 \\
+		Mild                    & Moderate             & & Moderate        & Moderate            \\
+		Moderate                & Moderate             & & High            & High                \\
+		Severe                  & High                 & & -             & -                 \\
+		Extremely severe        & Severe               & & -             & -                 \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Disagreement handling.} When a questionnaire exists, $L_{\text{inst}}$ is the headline. The LLM's predicted level $\hat{L}_{\text{LLM}}$ is used as the headline only when no questionnaire was completed. If both exist and $\hat{L}_{\text{LLM}}\neq L_{\text{inst}}$, the interface tells the student about the divergence instead of silently choosing one.
+
+\subsubsection{Assessment pipeline}
+Algorithm~\ref{alg:pipeline} gives the complete request flow. Its ordering is a safety property: everything before line~6 is pure computation with no side effects, and nothing the student disclosed is stored or sent to an external service until the crisis gate has cleared.
+
+\begin{algorithm}[H]
+	\small
+	\caption{$(\text{Response}) \gets \texttt{RunFullAssessment}(x, D, P, C)$}
+	\label{alg:pipeline}
+	\begin{algorithmic}[1]
+		\Require free text $x$ (optional), DASS-21 answers $D$, PSS-10 answers $P$, context $C$ (optional)
+		\State $e \gets \texttt{Analyze}(x)$ \Comment{keywords; PhoBERT only if $x$ is Vietnamese}
+		\State $(s_D, s_P) \gets (\texttt{ScoreDASS21}(D), \texttt{ScorePSS10}(P))$
+		\State $L_{\text{inst}} \gets \max(\phi_{\text{DASS}}(s_D.\text{stress}), \phi_{\text{PSS}}(s_P.\text{category}))$
+		\State $\text{crisis} \gets \texttt{CheckCrisis}(x, D, s_D.\text{depression})$ \Comment{Algorithm~\ref{alg:crisis}}
+		\If{$\text{crisis}.\text{isCrisis}$}
+		\State \Return helpline message \Comment{nothing persisted, no LLM call}
+		\EndIf
+		\State $\texttt{Persist}(x, e, D, P, s_D, s_P, C)$
+		\State $\mathcal{R} \gets \texttt{Retrieve}(\texttt{BuildQuery}(x, e, L_{\text{inst}}), k{=}4)$ \Comment{Algorithm~\ref{alg:rag}}
+		\If{$\mathcal{R} = \emptyset$}
+		\State \Return $(L_{\text{inst}}, s_D, s_P, \text{``advice withheld: nothing retrieved''})$
+		\EndIf
+		\State $a \gets \texttt{LLM}(x, e, s_D, s_P, C, \mathcal{R})$ \Comment{on failure: return scores with reason}
+		\State $a.\text{citations} \gets \{\, c \in a.\text{citations} \mid c \in \texttt{ids}(\mathcal{R}) \,\}$
+		\State $\texttt{PersistPrediction}(L_{\text{inst}}, a)$
+		\State \Return $(L_{\text{inst}}, a, \mathcal{R})$
+	\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Crisis detection}
+Let $\nu(x)$ be the normalised text, $\Pi=\{(\kappa_j, \pi_j)\}$ the set of regular-expression patterns, each tagged with one of six constructs $\kappa_j \in \{$explicit, passive wish, existence, burden, preparation, escape$\}$, and $\Gamma$ a set of idiom guards. A pattern match $m$ is \textit{suppressed} only if some guard match $g$ overlaps its character span, $\mathrm{span}(m)\cap\mathrm{span}(g)\neq\emptyset$. This span-local rule means ``this deadline is killing me'' does not fire, but a message containing both an idiom and a genuine disclosure still fires on the disclosure. The questionnaire triggers use DASS-21 items 17 (``I felt I wasn't worth much as a person'') and 21 (``I felt that life was meaningless'').
+
+\begin{algorithm}[H]
+	\small
+	\caption{$(\text{isCrisis}, \text{reasons}) \gets \texttt{CheckCrisis}(x, D, \sigma_d)$}
+	\label{alg:crisis}
+	\begin{algorithmic}[1]
+		\Require text $x$, DASS-21 answers $D$, depression severity $\sigma_d$
+		\State $\text{reasons} \gets \emptyset$;\ $t \gets \nu(x)$
+		\State $G \gets \{\mathrm{span}(g) \mid \gamma \in \Gamma,\ g \in \texttt{FindAll}(\gamma, t)\}$
+		\For{$(\kappa, \pi) \in \Pi$}
+		\For{$m \in \texttt{FindAll}(\pi, t)$}
+		\If{$\nexists\, s \in G : s \cap \mathrm{span}(m) \neq \emptyset$}
+		\State $\text{reasons} \gets \text{reasons} \cup \{\text{``self-harm language''}\}$
+		\EndIf
+		\EndFor
+		\EndFor
+		\If{$D_{17} = 3 \wedge D_{21} = 3$}
+		\State $\text{reasons} \gets \text{reasons} \cup \{\text{``DASS risk items maximal''}\}$
+		\ElsIf{$\sigma_d = \text{Extremely severe} \wedge \max(D_{17}, D_{21}) \geq 2$}
+		\State $\text{reasons} \gets \text{reasons} \cup \{\text{``extremely severe depression with risk item''}\}$
+		\EndIf
+		\State \Return $(\text{reasons} \neq \emptyset,\ \text{reasons})$
+	\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Grounded retrieval}
+The retrieval query was originally built from the matched lexicon keywords plus a label string (for example ``\textit{exam pressure deadline student with High stress}''). The paired experiment in Section~\ref{sec:res-rag} showed this discarded most of the useful signal, so the query is now the student's sentence sharpened by the keywords. Algorithm~\ref{alg:rag} gives the current construction together with citation verification.
+
+\begin{algorithm}[H]
+	\small
+	\caption{$(\mathcal{R}, \text{citations}) \gets \texttt{GroundedRetrieve}(x, e, L, a)$}
+	\label{alg:rag}
+	\begin{algorithmic}[1]
+		\Require text $x$, text analysis $e$, questionnaire label $L$, LLM answer $a$
+		\If{$x$ is non-empty}
+		\State $q \gets \texttt{prefix}(x, 300) \mathbin\Vert \texttt{join}(e.\text{keywords})$ \Comment{no label appended}
+		\ElsIf{$L$ exists}
+		\State $q \gets$ ``student with $L$ stress''
+		\Else
+		\State $q \gets$ ``coping strategies for academic stress in university students''
+		\EndIf
+		\State $\mathcal{R} \gets \operatorname{top-}k_{d \in \mathcal{K}}\ \mathrm{sim}(q, d)$ with $k = 4$ \Comment{Eq.~\eqref{eq:cos}; no threshold}
+		\State $\text{citations} \gets \{\, c \in a.\text{citations} \mid c \in \texttt{ids}(\mathcal{R}) \,\}$ \Comment{drop invented ids}
+		\State \Return $(\mathcal{R}, \text{citations})$
+	\end{algorithmic}
+\end{algorithm}
+
+\section{Evaluation Design}
+\label{sec:eval-design}
+
+\subsection{Datasets}
+No public Vietnamese corpus of annotated student mental-health text exists, so classification experiments use a \textbf{synthetic dataset}. Each record is driven by a latent stress variable $\theta\in[0,1]$ drawn from a mixture of Beta distributions, so that text, questionnaire answers and context are consistent within a record. DASS-21 responses are sampled as
+\begin{align}
+	a_i = \mathrm{clip}\Big(\mathrm{round}\big(\mathcal{N}(3.2\,\theta + b_{s(i)},\ 0.7)\big),\ 0,\ 3\Big), \qquad b_s \sim \mathcal{N}(0, 0.35), \label{eq:gen}
+\end{align}
+where $b_s$ is a per-record subscale bias; PSS-10 items are sampled analogously, with reverse-worded items driven by $1-\theta$. Free text is assembled from a bank of \textbf{41 Vietnamese sentence fragments} organised by stress band and rhetorical slot. After exact deduplication, 466 records remain, split once (stratified, seed 42) into train 326 / validation 70 / test 70 and frozen to disk.
+
+Three further labelled sets were built for the other components: two 50-item crisis \textit{development} sets (Vietnamese and English), one 60-item bilingual crisis \textit{held-out} set frozen with a recorded SHA-256 hash before the rebuilt patterns were written, and 57 retrieval queries labelled with the chunk identifiers that answer them.
+
+\subsection{Systems compared}
+Six systems are evaluated on the identical test split in the unified four-class space: (i)~\textbf{majority class}; (ii)~\textbf{TF-IDF + logistic regression}; (iii)~\textbf{TF-IDF + linear SVM}; (iv)~\textbf{fine-tuned PhoBERT}; (v)~\textbf{LLM zero-shot}, which sees the text only; and (vi)~the \textbf{proposed pipeline}, which sees text, text analysis, questionnaire scores and retrieved passages.
+
+Two caveats are fixed in advance. PhoBERT was fine-tuned with three classes (Low, Moderate, High) and is mapped by identity, so its F1 on Severe is zero by construction; no threshold remapping is applied because any choice would be arbitrary. The proposed pipeline receives the DASS-21 and PSS-10 scores from which the ground-truth label is derived, so its agreement with that label is partly definitional; the \code{no\_questionnaire} ablation quantifies this.
+
+\subsection{Ablation}
+The ablation runs the \textit{production} engine with three switches - retrieval, questionnaire features, text-analysis features - rather than a re-implementation, so ablated and headline systems cannot drift apart. Five configurations are defined: \code{full}, \code{no\_rag}, \code{no\_questionnaire}, \code{no\_emotion} and \code{text\_only}. They run on a stratified 40-item subsample (seed 42) to respect the LLM provider's daily token quota. A difference smaller than the $\pm0.148$ noise floor (Section~\ref{sec:metrics}) is not given a direction.
+
+\subsection{Metrics and controls}
+Classification uses accuracy, macro-F1, Cohen's $\kappa$ and per-class F1. The crisis rule reports precision, recall, F1 and full confusion counts, because its two error types have very different costs. Retrieval uses Recall@$k$, Precision@$k$, nDCG@$k$ and MRR for $k\in\{1,3,5,8\}$. Latency is timed per stage over 30 repetitions and reported as p50 and p95. Near-duplicate leakage is measured as the maximum \code{difflib} similarity of each test text to any training text, cross-checked with TF-IDF cosine similarity. LLM responses are cached by a SHA-256 hash of the full input including model identity, so re-running an evaluation makes zero API calls and returns identical results; replies that fail to parse, are rate-limited or error are counted separately, and a system with more than 20\,\% unusable replies is recorded as \textit{not run} rather than scored.

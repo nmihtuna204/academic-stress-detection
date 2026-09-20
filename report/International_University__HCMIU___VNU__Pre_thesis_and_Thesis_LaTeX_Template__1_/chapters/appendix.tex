@@ -1,0 +1,317 @@
+%% Appendices. Each \chapter here is lettered (A, B, ...) by the \appendix command in main.tex.
+
+\chapter{LISTINGS}
+\label{app:listings}
+The listings below are excerpts from the repository, shortened only by removing docstrings and log messages.
+
+\begin{lstlisting}[language=Python, caption={[Unified label derivation]Unified label derivation (\texttt{app/scoring/\_\_init\_\_.py}).}, label={lst:label}]
+_STRESS_LEVELS = ["Low", "Moderate", "High", "Severe"]
+_DASS_TO_UNIFIED = {"Normal": "Low", "Mild": "Moderate", "Moderate": "Moderate",
+                    "Severe": "High", "Extremely Severe": "Severe"}
+_PSS_TO_UNIFIED = {"Low": "Low", "Moderate": "Moderate", "High": "High"}
+
+def derive_ground_truth(dass_stress_severity=None, pss_category=None) -> str:
+    candidates = []
+    if dass_stress_severity is not None:
+        if dass_stress_severity not in _DASS_TO_UNIFIED:
+            raise ValueError(f"unknown DASS severity: {dass_stress_severity!r}")
+        candidates.append(_DASS_TO_UNIFIED[dass_stress_severity])
+    if pss_category is not None:
+        if pss_category not in _PSS_TO_UNIFIED:
+            raise ValueError(f"unknown PSS category: {pss_category!r}")
+        candidates.append(_PSS_TO_UNIFIED[pss_category])
+    if not candidates:
+        raise ValueError("at least one of dass_stress_severity / pss_category is required")
+    return max(candidates, key=_STRESS_LEVELS.index)
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python, caption={[PSS-10 validation and scoring]PSS-10 validation and scoring (\texttt{app/scoring/pss10.py}).}, label={lst:pss}]
+def _validate_answers(answers: dict[int, int]) -> None:
+    expected_ids = set(range(1, 11))
+    if set(answers.keys()) != expected_ids:
+        raise ValueError(f"answers must contain exactly keys 1-10, got {sorted(answers.keys())}")
+    for question_id, value in answers.items():
+        # bool is a subclass of int in Python, so reject it explicitly
+        if not isinstance(value, int) or isinstance(value, bool) or value not in (0, 1, 2, 3, 4):
+            raise ValueError(f"answer for question {question_id} must be an int in 0-4, got {value!r}")
+
+def score_pss10(answers: dict[int, int]) -> dict:
+    _validate_answers(answers)
+    item_scores = {
+        qid: (4 - value if qid in REVERSE_SCORED_ITEMS else value)   # items 4, 5, 7, 8
+        for qid, value in answers.items()
+    }
+    total_score = sum(item_scores.values())
+    return {"total_score": total_score,
+            "category": classify_pss(total_score),
+            "item_scores": item_scores}
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python, caption={[Span-local idiom guarding in the crisis rule]Span-local idiom guarding (\texttt{app/nlp/crisis\_patterns.py}).}, label={lst:crisis}]
+def find_crisis_matches(normalized_text: str) -> list[tuple[str, str]]:
+    """Return (construct, matched_text) for every crisis pattern that fires."""
+    if not normalized_text:
+        return []
+
+    guard_spans = [m.span() for guard in IDIOM_GUARDS for m in guard.finditer(normalized_text)]
+
+    def is_guarded(span: tuple[int, int]) -> bool:
+        return any(gs[0] < span[1] and span[0] < gs[1] for gs in guard_spans)
+
+    hits, seen = [], set()
+    for construct, pattern in CRISIS_PATTERNS:
+        for match in pattern.finditer(normalized_text):
+            if is_guarded(match.span()):
+                continue
+            key = (construct, match.group(0))
+            if key not in seen:
+                seen.add(key)
+                hits.append(key)
+    return hits
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python, caption={[Retrieval query construction]Retrieval query construction (\texttt{app/api/services.py}).}, label={lst:query}]
+def build_rag_query(raw_text, emotion, questionnaire) -> str:
+    # Measured on 16 affected labelled queries (paired design):
+    #   keywords replacing the text (old)   MRR 0.509
+    #   raw text only                       MRR 0.778
+    #   raw text + keywords (this)          MRR 0.839
+    text = raw_text.strip()[:300] if raw_text and raw_text.strip() else ""
+    if text:
+        keywords = " ".join(emotion.stress_keywords) if emotion and emotion.stress_keywords else ""
+        return f"{text} {keywords}".strip()
+    if questionnaire:
+        return f"student with {questionnaire.ground_truth_label.value} stress"
+    return "coping strategies for academic stress in university students"
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python, caption={[Crisis gate and citation verification]Crisis gate and citation verification in \texttt{run\_full\_assessment} (\texttt{app/api/services.py}, excerpt).}, label={lst:pipeline}]
+    # 1. Analysis only - pure computation, no persistence yet.
+    emotion = analyze(request.raw_text) if request.raw_text and request.raw_text.strip() else None
+    dass_result, pss_result, questionnaire = score_questionnaires(request.dass21, request.pss10)
+
+    # 2. Crisis rule - runs BEFORE any persistence and before the LLM.
+    crisis = check_crisis(
+        raw_text=request.raw_text,
+        dass_answers=request.dass21.answers if request.dass21 else None,
+        dass_depression_severity=dass_result["depression"]["severity"] if dass_result else None,
+    )
+    if crisis.is_crisis:
+        logger.warning("Crisis rule triggered: %s", crisis.reasons)   # reasons only, never the text
+        return AssessmentResponse(student_id=user.student_id, crisis_detected=True,
+                                  crisis_message=crisis.message,
+                                  emotion=emotion, questionnaire=questionnaire)
+
+    # 3. Cleared by the crisis rule - now it is safe to persist.
+    ...
+    docs = retrieve(build_rag_query(request.raw_text, emotion, questionnaire), k=4)
+    if not docs:
+        advice_unavailable_reason = "No reference material could be retrieved, ..."
+    else:
+        assessment = await llm_assess(...)   # on failure: deterministic results + reason
+
+    # Citations are only trustworthy once checked against what was actually retrieved.
+    by_id = {d.chunk_id: d for d in docs if d.chunk_id}
+    assessment.citations = [c for c in assessment.citations if c in by_id]
+\end{lstlisting}
+
+\begin{lstlisting}[caption={[Assessment system prompt]Assessment system prompt (\texttt{app/llm/chain.py}, verbatim).}, label={lst:prompt}]
+You are a mental-health support assistant for university students, with a warm,
+empathetic and non-judgmental tone.
+
+TASK: Based on the evidence provided (the student's own words, automated emotion
+analysis, DASS-21/PSS-10 screening scores, academic and lifestyle context, and
+reference material), give an assessment of their academic stress level.
+
+MANDATORY RULES:
+1. You are NOT a clinician and must NOT diagnose. Never use phrasing such as
+"you have depression" or "you have an anxiety disorder". Only describe the level
+of stress and point towards sources of support.
+2. Write the explanation (reasoning) in English, addressing the student directly
+as "you", in the voice of a supportive senior peer. State clearly which evidence
+led to your conclusion (e.g. DASS-21 scores, keywords in what they wrote, lack
+of sleep).
+3. Give 3 concrete action suggestions (suggestions) that are achievable within
+the coming week and matched to this student's own context (study schedule, sleep,
+support resources). If the reference material in section 5 supports fewer than 3,
+give only those it supports - rule 4 outranks this count, and a short grounded
+answer is correct where a padded one is not.
+4. GROUNDING - this rule is absolute. Every suggestion must be supported by the
+reference material in section 5 of the input. Do NOT introduce advice, techniques,
+services, phone numbers or clinical claims that are not present in that material,
+even if you believe them to be true. You may rephrase the material to fit this
+student, but you may not add to it. If section 5 is empty or does not cover what
+this student needs, say so plainly in the reasoning and give only the suggestions
+the material does support, rather than filling the gap from your own knowledge.
+5. For every suggestion, cite the reference documents you drew it from. Populate
+the citations field with the exact document identifiers shown in section 5, in the
+form `filename.md::N`. Cite only identifiers that actually appear in section 5. If
+you could not ground a suggestion in any document, do not invent a citation.
+6. If you see concerning signs (sustained lack of sleep, hopelessness, negative
+thoughts about self-worth), add a flag to risk_flags and encourage seeking
+professional support in the suggestions.
+7. The predicted level (predicted_level) must be one of: Low, Moderate, High,
+Severe. Weigh ALL the evidence; if sources conflict, explain why you lean towards
+the conclusion you chose and lower the confidence accordingly.
+
+{format_instructions}
+\end{lstlisting}
+
+\chapter{INSTRUMENT ITEMS AND CRISIS MESSAGE}
+\label{app:items}
+
+\section{DASS-21 items as deployed}
+Response scale: 0 = did not apply to me at all; 1 = applied to me to some degree, or some of the time; 2 = applied to me to a considerable degree, or a good part of the time; 3 = applied to me very much, or most of the time. Items are the original English wording~\cite{lovibond1995}. D = depression, A = anxiety, S = stress.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{DASS-21 items.}
+	\label{tab:dass-items}
+	\begin{tabularx}{\textwidth}{rlL}
+		\toprule
+		\#  & Scale & Item \\ \midrule
+		1  & S & I found it hard to wind down \\
+		2  & A & I was aware of dryness of my mouth \\
+		3  & D & I couldn't seem to experience any positive feeling at all \\
+		4  & A & I experienced breathing difficulty \\
+		5  & D & I found it difficult to work up the initiative to do things \\
+		6  & S & I tended to over-react to situations \\
+		7  & A & I experienced trembling (e.g.\ in the hands) \\
+		8  & S & I felt that I was using a lot of nervous energy \\
+		9  & A & I was worried about situations in which I might panic and make a fool of myself \\
+		10 & D & I felt that I had nothing to look forward to \\
+		11 & S & I found myself getting agitated \\
+		12 & S & I found it difficult to relax \\
+		13 & D & I felt down-hearted and blue \\
+		14 & S & I was intolerant of anything that kept me from getting on with what I was doing \\
+		15 & A & I felt I was close to panic \\
+		16 & D & I was unable to become enthusiastic about anything \\
+		17 & D & I felt I wasn't worth much as a person \textit{(crisis risk item)} \\
+		18 & S & I felt that I was rather touchy \\
+		19 & A & I was aware of the action of my heart in the absence of physical exertion \\
+		20 & A & I felt scared without any good reason \\
+		21 & D & I felt that life was meaningless \textit{(crisis risk item)} \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{PSS-10 items as deployed}
+Response scale: 0 = never; 1 = almost never; 2 = sometimes; 3 = fairly often; 4 = very often. Items are Cohen's original English wording~\cite{cohen1983}; R marks reverse-scored items.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{PSS-10 items.}
+	\label{tab:pss-items}
+	\begin{tabularx}{\textwidth}{rcL}
+		\toprule
+		\# & Rev. & Item \\ \midrule
+		1  &   & How often have you been upset because of something that happened unexpectedly? \\
+		2  &   & How often have you felt that you were unable to control the important things in your life? \\
+		3  &   & How often have you felt nervous and stressed? \\
+		4  & R & How often have you felt confident about your ability to handle your personal problems? \\
+		5  & R & How often have you felt that things were going your way? \\
+		6  &   & How often have you found that you could not cope with all the things that you had to do? \\
+		7  & R & How often have you been able to control irritations in your life? \\
+		8  & R & How often have you felt that you were on top of things? \\
+		9  &   & How often have you been angered because of things that were outside of your control? \\
+		10 &   & How often have you felt difficulties were piling up so high that you could not overcome them? \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{Crisis message}
+Displayed in place of all analysis when the crisis rule fires:
+
+\begin{quote}
+	\textbf{Your safety genuinely matters to us.} From what you shared, it sounds like you are going through something very hard right now. You are not alone, and these feelings can be worked through with the right support.
+
+	\textbf{Please reach out to one of these right now:}
+	\begin{itemize}
+		\item \textbf{\vi{Ngày Mai} helpline: 096 306 1414} - free psychological support for young people
+		\item \textbf{Hotline 111} - national support line, free, available 24/7
+		\item \textbf{Emergency 115} - if you are in immediate danger
+		\item Go to the nearest medical facility or your university counselling office
+	\end{itemize}
+
+	\textbf{Right now:} please don't stay on your own. Call or message someone you trust and tell them you need someone with you. Asking for help is an act of courage.
+\end{quote}
+
+\chapter{CRISIS-RULE ERRORS}
+\label{app:crisis}
+All errors of the construct-based rule are listed verbatim. There are no false positives on any set.
+
+\section{Held-out set (60 items): 4 false negatives}
+\begin{table}[H]
+	\centering
+	\small
+	\caption{False negatives on the held-out crisis set.}
+	\begin{tabularx}{\textwidth}{rlL}
+		\toprule
+		\#  & Category   & Item (verbatim) \\ \midrule
+		16 & indirect   & ``I looked over the railing on the ninth floor for a while yesterday.'' \\
+		23 & indirect   & ``\vi{Hôm qua em đứng nhìn xuống từ lan can tầng chín một lúc lâu.}'' (same content in Vietnamese) \\
+		26 & indirect   & ``\vi{Em đang đếm xem trong hộp còn bao nhiêu viên thuốc.}'' (``I am counting how many pills are left in the box.'') \\
+		29 & borderline & ``Part of me hopes something happens to me so this stops.'' \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+Items 16 and 23 describe a \textit{situation} (standing at a height) rather than a statement of intent, which a pattern rule cannot generalise to without firing on ordinary sentences. Item 26 escaped the preparation pattern because the pill-counting pattern expects \vi{đếm} to be followed within 25 characters by \vi{viên thuốc}, and the sentence places a longer clause between them. Item 29 is a passive escape wish phrased with ``part of me hopes'', which the escape pattern (``hope something happens to me'') does not cover.
+
+\section{English development set (50 items): 4 false negatives}
+\begin{table}[H]
+	\centering
+	\small
+	\caption{False negatives on the English development set.}
+	\begin{tabularx}{\textwidth}{rlL}
+		\toprule
+		\#  & Category   & Item (verbatim) \\ \midrule
+		13 & indirect   & ``I have already written letters for my parents and my roommate.'' \\
+		14 & indirect   & ``I stood at the edge of the balcony for a long time last night.'' \\
+		17 & indirect   & ``Lately I imagine my own funeral and who would come.'' \\
+		27 & borderline & ``I keep thinking everyone would move on quickly without me.'' \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+\section{Vietnamese development set (50 items)}
+No errors after the rebuild (TP~24, FP~0, FN~0, TN~26). Because this set was used for debugging, this result is fitted and is not evidence of generalisation.
+
+\chapter{REPRODUCIBILITY}
+\label{app:repro}
+Python 3.11 or newer (development on 3.13); CI on Ubuntu with Python 3.11 and CPU-only PyTorch. Seed 42 is used for generation, splitting, baselines and fine-tuning.
+
+\begin{lstlisting}[caption={Commands that regenerate every result in Chapter~\ref{ch:result}.}, label={lst:repro}]
+# 1. Install and configure
+pip install -r requirements.txt
+cp .env.example .env              # set OPENAI_API_KEY and OPENAI_BASE_URL
+
+# 2. Build the knowledge index (23 chunks) and run the app
+python -m app.rag.ingest
+uvicorn app.api.main:app --host 127.0.0.1 --port 8000
+streamlit run streamlit_app/Home.py
+# or: docker compose up --build
+
+# 3. Dataset and fine-tuning
+python research/generate_dataset.py --rows 500 --seed 42 --out data/stress_dataset.csv
+python research/phobert_finetune.py --epochs 4 --batch-size 16 --lr 2e-5 --seed 42
+
+# 4. Evaluations (artefacts in data/eval/)
+python -m app.eval.compare  --dataset synthetic                     # Table 6.3
+python -m app.eval.ablation --dataset synthetic \
+       --configs full no_questionnaire no_emotion --limit 40         # Table 6.4
+python -m app.eval.retrieval_eval                                   # Tables 6.5-6.6
+python -m app.eval.crisis_eval --testset data/eval/crisis_testset_heldout.jsonl \
+       --out data/eval/crisis_eval_heldout.md                       # Table 6.7
+python -m app.eval.latency_eval --repeats 30                        # Table 6.8
+python scripts/check_leakage.py                                     # Table 6.9
+
+# 5. Report figures (images/fig_*.png)
+python report/make_report_figures.py
+
+# 6. Tests and coverage
+python -m pytest tests/ -q --cov=app --cov-report=term-missing
+
+# 7. Real-data study (same evaluation code)
+python scripts/export_dataset.py --split
+python scripts/data_quality_report.py
+python -m app.eval.compare --dataset real
+\end{lstlisting}

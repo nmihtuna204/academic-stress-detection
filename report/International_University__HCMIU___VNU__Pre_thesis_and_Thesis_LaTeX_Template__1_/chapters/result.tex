@@ -1,0 +1,336 @@
+This chapter presents the working prototype and every measurement obtained. \textbf{All classification results are computed on synthetic, template-generated data with a single seed}; Chapter~\ref{ch:discussion} explains why they demonstrate the pipeline rather than real-world stress detection.
+
+\section{System Prototyping}
+The prototype is a complete, runnable application. This section shows its main states.
+
+\subsection{Consent and input pages}
+The home page presents the purpose of the tool and a six-point consent checklist covering eligibility, the non-diagnostic nature of the tool, processing by the named third-party LLM provider, the retention period, the right to erase, and voluntary participation (Figure~\ref{fig:ss-consent}). The free-text page offers optional mood prompts. The questionnaire pages show items with their published response anchors and a live completion counter (Figure~\ref{fig:ss-dass}).
+
+\screenshot{screenshot_consent.png}{0.8}{Home page with the consent checklist.}{fig:ss-consent}
+\screenshot{screenshot_dass21.png}{0.8}{DASS-21 page with the live completion counter.}{fig:ss-dass}
+
+\subsection{Results page}
+The results page (Figure~\ref{fig:ss-results}) opens with a plain-language statement of what the result means, then shows the level badge and gauge, the DASS-21 subscale chart, a normalised radar profile, risk and protective factors, the LLM's explanation, the suggestions, and the sources the advice was drawn from. If the LLM's level differs from the questionnaire level, a note states the divergence.
+
+\screenshot{screenshot_results.png}{0.8}{Results page for a completed assessment.}{fig:ss-results}
+
+\subsection{Crisis state and history}
+When the crisis rule fires, the page shows only the helpline block and stops rendering (Figure~\ref{fig:ss-crisis}). The history page shows a trend chart, a timeline of past assessments and the two-step control that erases the student's data (Figure~\ref{fig:ss-history}).
+
+\screenshot{screenshot_crisis.png}{0.8}{Crisis state: helplines replace the assessment.}{fig:ss-crisis}
+\screenshot{screenshot_history.png}{0.8}{History page with trend chart and data deletion control.}{fig:ss-history}
+
+\section{Experiment Setup}
+\subsection{Environment}
+Fine-tuning and all evaluations ran on CPU under Windows~11 with Python~3.13. LLM systems used \code{openai/gpt-oss-120b} served by Groq's free tier through an OpenAI-compatible endpoint, with temperature 0.0 for evaluation. The comparison run of the proposed pipeline completed on 2026-09-10 with all 70 items usable (\code{parse\_failures=0, rate\_limited=0, call\_failures=0}). Figure~\ref{fig:provenance} shows how every artefact behind this chapter is produced.
+
+\diagram{diagram_eval_provenance.png}{1.0}{Evaluation provenance: every reported number is written by a script.}{fig:provenance}
+
+\subsection{Dataset}
+Table~\ref{tab:dataset} and Figure~\ref{fig:labels} give the class distribution of the frozen split in the unified four-class space. The corpus has 466 distinct texts, mean length 46.3 words, and zero exact duplicates across splits.
+
+\begin{table}[ht]
+	\centering
+	\caption{Dataset statistics per class and split (unified four-class label).}
+	\label{tab:dataset}
+	\begin{tabular}{lrrrrr}
+		\toprule
+		Split      & $n$          & Low          & Moderate     & High         & Severe      \\ \midrule
+		Train      & 326          & 81           & 109          & 88           & 48          \\
+		Validation & 70           & 17           & 25           & 16           & 12          \\
+		Test       & 70           & 16           & 23           & 22           & 9           \\ \midrule
+		Total      & \textbf{466} & \textbf{114} & \textbf{157} & \textbf{126} & \textbf{69} \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.85\linewidth]{fig_label_distribution.png}
+	\caption{Label distribution across the frozen train, validation and test splits.}
+	\label{fig:labels}
+\end{figure}
+
+\subsection{Protocol}
+The systems, ablation configurations and metrics are those defined in Section~\ref{sec:eval-design}, with the hyperparameters of Table~\ref{tab:hyper}.
+
+\section{Experiment Result}
+
+\subsection{PhoBERT fine-tuning}
+Training loss fell monotonically over four epochs (0.981, 0.668, 0.530, 0.489), while validation macro-F1 rose from 0.778 to 0.840 at epoch~2 and then plateaued (Figure~\ref{fig:training}); the epoch-2 checkpoint was kept. On its own three-class task the model reached \textbf{test accuracy 0.800 and macro-F1 0.801} (Table~\ref{tab:phobert3}). All 14 errors fall between adjacent classes (Figure~\ref{fig:confusion}b); none crosses from Low to High or back, which is the benign error pattern for an ordinal construct.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.72\linewidth]{fig_training_curves.png}
+	\caption{PhoBERT training loss and validation macro-F1 per epoch.}
+	\label{fig:training}
+\end{figure}
+
+\begin{table}[ht]
+	\centering
+	\caption{Fine-tuned PhoBERT on its three-class test split ($n=70$).}
+	\label{tab:phobert3}
+	\begin{tabular}{lrrrr}
+		\toprule
+		Class         & Precision      & Recall         & F1             & Support     \\ \midrule
+		Low           & 0.818          & 0.947          & 0.878          & 19          \\
+		Moderate      & 0.667          & 0.727          & 0.696          & 22          \\
+		High          & 0.917          & 0.759          & 0.830          & 29          \\ \midrule
+		Macro average & \textbf{0.801} & \textbf{0.811} & \textbf{0.801} & \textbf{70} \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\subsection{Classification systems}
+Table~\ref{tab:main} and Figure~\ref{fig:systems} compare all six systems on the unified four-class test split.
+
+\begin{table}[ht]
+	\centering
+	\caption[Main results on the unified four-class test split]{Main results on the unified four-class test split ($n=70$, synthetic data, single seed). Best value per column in bold.}
+	\label{tab:main}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{lrrrrrrr}
+			\toprule
+			System                     & Accuracy        & Macro-F1        & Cohen's $\kappa$ & F1 Low          & F1 Moderate     & F1 High         & F1 Severe       \\ \midrule
+			Majority class             & 0.329           & 0.124           & 0.000            & 0.000           & 0.495           & 0.000           & 0.000           \\
+			TF-IDF + LogReg            & \textbf{0.686}  & \textbf{0.682}  & \textbf{0.581}   & 0.821           & 0.651           & 0.588           & \textbf{0.667}  \\
+			TF-IDF + SVM               & 0.657           & 0.652           & 0.542            & 0.821           & 0.622           & 0.500           & \textbf{0.667}  \\
+			PhoBERT fine-tuned         & 0.657           & 0.533           & 0.516            & \textbf{0.842}  & \textbf{0.681}  & \textbf{0.609}  & 0.000$^\dagger$ \\
+			LLM zero-shot              & 0.529           & 0.524           & 0.389            & \textbf{0.842}  & 0.375           & 0.316           & 0.563           \\
+			Proposed pipeline          & 0.486           & 0.500           & 0.311            & 0.733           & 0.606           & 0.353           & 0.308           \\ \bottomrule
+		\end{tabular}%
+	}
+	\par\smallskip
+	{\raggedright\footnotesize $^\dagger$ PhoBERT has three output classes and cannot predict Severe.\par}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.95\linewidth]{fig_system_comparison.png}
+	\caption{Accuracy, macro-F1 and Cohen's $\kappa$ per system. Dashed line: majority-class macro-F1.}
+	\label{fig:systems}
+\end{figure}
+
+Four observations follow. \textbf{(1)~The classical TF-IDF baseline has the highest macro-F1 of any system}, including the proposed pipeline. \textbf{(2)~The proposed pipeline does not outperform zero-shot prompting} (0.500 against 0.524); this run is free of the two confounds that invalidated an earlier run (a retrieval query that differed from the deployed app on 53\,\% of items, and a quota cap that left 46\,\% of items unanswered). \textbf{(3)~PhoBERT's deficit is entirely in the Severe class}: on the three classes it can predict, its F1 equals or exceeds TF-IDF on every one (Figure~\ref{fig:perclass}). \textbf{(4)~Every system clears the majority-class floor}, so each learns something from its input. Figure~\ref{fig:confusion} shows that TF-IDF errors are also almost all adjacent: 21 of its 22 errors fall into a neighbouring class.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.78\linewidth]{fig_per_class_f1.png}
+	\caption{Per-class F1 for every system.}
+	\label{fig:perclass}
+\end{figure}
+
+\begin{figure}[ht]
+	\centering
+	\begin{minipage}{0.49\linewidth}
+		\centering
+		\includegraphics[width=\linewidth]{fig_confusion_tfidf_lr.png}\\
+		\small (a) TF-IDF + LogReg, four classes
+	\end{minipage}\hfill
+	\begin{minipage}{0.49\linewidth}
+		\centering
+		\includegraphics[width=\linewidth]{fig_confusion_phobert.png}\\
+		\small (b) PhoBERT, three classes
+	\end{minipage}
+	\caption{Confusion matrices on the test split (rows: true label; columns: predicted label).}
+	\label{fig:confusion}
+\end{figure}
+
+\subsection{Ablation}
+\label{sec:res-ablation}
+Three of the five configurations were run on a stratified 40-item subsample (Table~\ref{tab:ablation}, Figure~\ref{fig:ablation}).
+
+\begin{table}[ht]
+	\centering
+	\caption[Ablation of proposed-pipeline components]{Ablation of proposed-pipeline components ($n=40$; noise floor $\pm0.148$). Quest.: questionnaire scores; Acc.: accuracy; $\Delta$: change in macro-F1 against \code{full}.}
+	\label{tab:ablation}
+	\begin{tabular}{lcccrrr}
+		\toprule
+		Configuration            & RAG    & Quest.        & Emotion & Acc.     & Macro-F1 & $\Delta$          \\ \midrule
+		\code{full}              & \cmark & \cmark        & \cmark  & 0.525    & 0.534    & -               \\
+		\code{no\_questionnaire} & \cmark & \xmark        & \cmark  & 0.325    & 0.123    & $\mathbf{-0.411}$ \\
+		\code{no\_emotion}       & \cmark & \cmark        & \xmark  & 0.600    & 0.593    & $+0.059$          \\
+		\code{no\_rag}           & \xmark & \cmark        & \cmark  & \multicolumn{3}{c}{not run} \\
+		\code{text\_only}        & \xmark & \xmark        & \xmark  & \multicolumn{3}{c}{not run} \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.8\linewidth]{fig_ablation.png}
+	\caption{Macro-F1 per ablation configuration with the sampling noise floor and the majority-class floor.}
+	\label{fig:ablation}
+\end{figure}
+
+\textbf{Removing the questionnaire scores is the one unambiguous result}: macro-F1 falls to 0.123, exactly the majority-class floor. Because those scores define the ground-truth label, this measures label leakage as much as feature value: substantially all of the pipeline's apparent agreement comes from being shown the quantities that define the answer. \textbf{Removing the text-analysis features changes nothing measurable}; the $+0.059$ is inside the noise floor, so no direction is claimed. The two retrieval-disabled configurations did not produce reportable results. Without retrieved material the model correctly obeyed the grounding rule and returned no suggestions, but the output schema requires at least one, so 29 of 40 \code{text\_only} replies (72\,\%) were rejected and the harness recorded the configuration as not run. This is a mismatch between the grounding rule and the schema, not a model failure.
+
+\subsection{Retrieval quality}
+\label{sec:res-rag}
+Table~\ref{tab:retrieval} and Figure~\ref{fig:retrieval} report retrieval over the 57 labelled queries through the production \code{retrieve()} function. \textbf{MRR is 0.787}; at the production depth $k=4$, Recall lies between the $k=3$ and $k=5$ values of 0.838 and 0.903.
+
+\begin{table}[ht]
+	\centering
+	\caption{Retrieval quality over 57 labelled queries (binary relevance).}
+	\label{tab:retrieval}
+	\begin{tabular}{rrrr}
+		\toprule
+		$k$ & Recall@$k$ & Precision@$k$ & nDCG@$k$ \\ \midrule
+		1   & 0.658      & 0.684         & 0.684    \\
+		3   & 0.838      & 0.298         & 0.776    \\
+		5   & 0.903      & 0.200         & 0.807    \\
+		8   & 0.965      & 0.136         & 0.829    \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.75\linewidth]{fig_retrieval_at_k.png}
+	\caption{Recall, precision and nDCG as a function of retrieval depth $k$.}
+	\label{fig:retrieval}
+\end{figure}
+
+\textbf{The key finding concerns the query construction, and it changed the system.} The original \code{build\_rag\_query} discarded the student's sentence, retrieved on the matched lexicon keywords, and appended a label string. A paired comparison - the same queries and relevance labels under six candidate constructions - was run. On the 16 queries the construction actually alters (Table~\ref{tab:query}, Figure~\ref{fig:query}), the sentence alone beat the keywords alone (MRR 0.778 against 0.509), and appending the label hurt every variant, costing the best one 0.15 MRR. The construction was rewritten to keep the sentence and append the keywords, which outperforms even the sentence alone. Vietnamese and English queries score similarly (MRR 0.800 and 0.786), though only five queries are Vietnamese. Six queries retrieved nothing relevant in the top four; one is safety-relevant (\textit{``hopeless worthless lost motivation''} missed the help-seeking and counselling sections).
+
+\begin{table}[ht]
+	\centering
+	\caption[Paired comparison of query constructions]{Paired comparison of query constructions on the 16 affected queries. Old: matched keywords plus a label string; Sentence: the student's sentence only; Current: sentence plus matched keywords.}
+	\label{tab:query}
+	\begin{tabular}{lrrrr}
+		\toprule
+		Metric   & Old                   & Sentence      & \textbf{Current}                      & $\Delta$ vs.\ old \\ \midrule
+		MRR      & 0.509                 & 0.778         & \textbf{0.839}                        & $+0.329$          \\
+		Recall@1 & 0.344                 & 0.656         & \textbf{0.719}                        & $+0.375$          \\
+		Recall@5 & 0.688                 & 0.938         & \textbf{1.000}                        & $+0.312$          \\
+		nDCG@5   & 0.540                 & 0.809         & \textbf{0.879}                        & $+0.338$          \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.85\linewidth]{fig_query_construction.png}
+	\caption{Effect of query construction on retrieval (paired design).}
+	\label{fig:query}
+\end{figure}
+
+\subsection{Crisis detection}
+Table~\ref{tab:crisis} compares the original phrase-list rule with the construct-based rule on all three sets, and Figure~\ref{fig:crisis} visualises it. \textbf{Only the held-out row is evidence}: the two development sets were used for debugging, so their post-rebuild scores are fitted by construction and are shown for completeness only. On the held-out set, precision rose from 0.600 to \textbf{1.000} and recall from 0.200 to \textbf{0.867}, with indirect ideation detected in 11 of 14 items instead of none. After fixing regressions found on the development sets, the held-out set was re-measured and produced identical numbers.
+
+\begin{table}[ht]
+	\centering
+	\caption{Crisis-detection rule before and after the rebuild.}
+	\label{tab:crisis}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{llrrrrr}
+			\toprule
+			Set                                  & Rule            & Precision      & Recall         & F1             & Explicit       & Indirect       \\ \midrule
+			\textbf{Held-out} (60, bilingual)    & phrase list     & 0.600          & 0.200          & 0.300          & 6/12           & 0/14           \\
+			                                     & \textbf{constructs} & \textbf{1.000} & \textbf{0.867} & \textbf{0.929} & \textbf{12/12} & \textbf{11/14} \\ \midrule
+			VI development (50)                  & phrase list     & 0.800          & 0.500          & 0.615          & 10/10          & 1/9            \\
+			                                     & constructs      & 1.000          & 1.000          & 1.000          & 10/10          & 9/9            \\ \midrule
+			EN development (50)                  & phrase list     & 1.000          & 0.417          & 0.588          & 10/10          & 0/10           \\
+			                                     & constructs      & 1.000          & 0.833          & 0.909          & 10/10          & 7/10           \\ \bottomrule
+		\end{tabular}%
+	}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.95\linewidth]{fig_crisis_before_after.png}
+	\caption{Precision, recall and F1 of the crisis rule before and after the rebuild.}
+	\label{fig:crisis}
+\end{figure}
+
+On the held-out set the rule produced TP~26, FP~0, FN~4 and TN~30 (Figure~\ref{fig:crisis-cat}). It raised no false positive on any of the 51 deliberately lethal-sounding hard negatives across the three sets. The four held-out misses - a railing on the ninth floor (in both languages), counting pills, and hoping something happens - are listed verbatim in Appendix~\ref{app:crisis}.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.8\linewidth]{fig_crisis_categories.png}
+	\caption{Held-out crisis set: accuracy per category.}
+	\label{fig:crisis-cat}
+\end{figure}
+
+\subsection{Latency}
+Table~\ref{tab:latency} and Figure~\ref{fig:latency} report 30 timed runs of each deterministic stage. The whole deterministic path costs \textbf{under 90\,ms at p50}, and the crisis gate that precedes every side effect costs 0.05\,ms. Cold start is paid once per process: 10.8\,s for PhoBERT and 10.8\,s for the embedder. End-to-end latency including generation, tokens per session and cost were not measured, because each sample is a billable request and the day's quota was used by the comparison run; on the Groq free tier the monetary cost is zero and the binding limit is the daily token cap.
+
+\begin{table}[ht]
+	\centering
+	\caption{Latency per stage (ms, CPU, $n=30$).}
+	\label{tab:latency}
+	\begin{tabular}{lrr}
+		\toprule
+		Stage                                  & p50               & p95                \\ \midrule
+		DASS-21 + PSS-10 scoring               & 0.03              & 0.05               \\
+		Crisis rule                            & 0.05              & 0.07               \\
+		Lexicon keyword match                  & 0.07              & 0.12               \\
+		RAG retrieval ($k=4$)                  & 28.01             & 83.43              \\
+		PhoBERT inference                      & 59.31             & 93.32              \\ \midrule
+		\textbf{Deterministic path, total}     & $\mathbf{\approx 88}$ & $\mathbf{\approx 177}$ \\
+		Cold start: PhoBERT / embedder (once)  & 10,820 / 10,829   & -                \\
+		End-to-end with generation             & \multicolumn{2}{c}{not measured}       \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.85\linewidth]{fig_latency.png}
+	\caption{Per-stage latency, p50 to p95, on a logarithmic axis.}
+	\label{fig:latency}
+\end{figure}
+
+\subsection{Data leakage and label ceiling}
+\label{sec:res-leakage}
+The exact-duplicate check passes: 0 of 70 test texts appear in the training split. The near-duplicate measurement tells a different story (Table~\ref{tab:leakage}, Figure~\ref{fig:leakage}). The median similarity of a test text to its nearest training text is \textbf{0.799}, and \textbf{34 of 70} test items exceed 0.80. Two further similarity measures agree, so the conclusion is not an artefact of one metric.
+
+\begin{table}[ht]
+	\centering
+	\caption{Nearest-neighbour similarity of each test item to the training split.}
+	\label{tab:leakage}
+	\begin{tabular}{lrrrrr}
+		\toprule
+		Measure               & Median & p90   & Max   & $>0.80$ & $>0.90$ \\ \midrule
+		\code{difflib} ratio  & 0.799  & 0.893 & 0.907 & 34/70   & 4/70    \\
+		Word TF-IDF cosine    & 0.797  & 0.892 & 0.946 & 34/70   & 5/70    \\
+		Char TF-IDF cosine    & 0.806  & 0.901 & 0.931 & 37/70   & 8/70    \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.8\linewidth]{fig_leakage.png}
+	\caption{Distribution of nearest-neighbour similarity between test and training texts.}
+	\label{fig:leakage}
+\end{figure}
+
+A second property bounds what any text-only classifier can achieve. The generator chooses a text's stress band by thresholding $\theta$, while the label comes independently from noisy questionnaire answers conditioned on $\theta$. The two disagree near the boundaries (Table~\ref{tab:band}): only \textbf{78.6\,\%} of test items (55 of 70) carry text from a band consistent with their label, so a classifier that perfectly recovered the text band would still score about 0.79 accuracy.
+
+\begin{table}[ht]
+	\centering
+	\caption{Generated text band against questionnaire-derived label (all 466 items).}
+	\label{tab:band}
+	\begin{tabular}{lrrrr}
+		\toprule
+		Text band $\downarrow$ / Label $\rightarrow$ & Low & Moderate & High & Severe \\ \midrule
+		low                                          & 109 & 35       & 2    & 0      \\
+		moderate                                     & 5   & 116      & 39   & 5      \\
+		high                                         & 0   & 6        & 85   & 64     \\ \bottomrule
+	\end{tabular}
+\end{table}
+
+\subsection{Summary of unmeasured quantities}
+Table~\ref{tab:notrun} lists what this pre-thesis did not measure, so that no gap is mistaken for a result.
+
+\begin{table}[ht]
+	\centering
+	\caption{Quantities specified in the evaluation design but not yet measured.}
+	\label{tab:notrun}
+	\begin{tabularx}{\textwidth}{lL}
+		\toprule
+		Quantity                                      & Reason / dependency \\ \midrule
+		RAG faithfulness (LLM-as-judge + human subset) & Needs generated answers at scale and provider quota \\
+		\code{no\_rag} and \code{text\_only} ablations & Blocked by the schema requiring at least one suggestion \\
+		End-to-end latency, tokens and cost per session & Each sample is a billable request \\
+		Multi-seed variance, bootstrap CIs, McNemar's test & Not yet run \\
+		Few-shot LLM and XLM-R baselines              & Not implemented \\
+		LLM--questionnaire disagreement rate          & Needs stored predictions from real sessions \\
+		Human evaluation (Krippendorff's $\alpha$) and SUS & Instruments implemented; no raters or participants yet \\
+		Any result on real student text               & No participant data collected \\ \bottomrule
+	\end{tabularx}
+\end{table}

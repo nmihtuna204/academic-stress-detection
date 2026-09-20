@@ -1,0 +1,20 @@
+This pre-thesis designed, implemented and evaluated an academic-stress screening application for Vietnamese university students. It combines deterministic scoring of the DASS-21 and PSS-10, a fine-tuned PhoBERT classifier, retrieval-augmented generation with verified citations, and a deterministic crisis gate that runs before any data is stored or sent to an external service. Table~\ref{tab:objectives} restates each objective against its measured outcome.
+
+\begin{table}[ht]
+	\centering
+	\caption{Objectives and outcomes.}
+	\label{tab:objectives}
+	\begin{tabularx}{\textwidth}{llL}
+		\toprule
+		Objective              & Status        & Evidence \\ \midrule
+		O1 Psychometric scoring & Achieved     & Both instruments verified item by item against their published scoring; 100\,\% test coverage of the scoring modules; malformed input rejected. \\
+		O2 Text classification & Achieved, with qualifications & Six systems measured on one frozen split. PhoBERT: 0.800 accuracy / 0.801 macro-F1 on its three-class task; 0.533 macro-F1 in the four-class space, behind TF-IDF (0.682). All on synthetic data, single seed. \\
+		O3 Grounded advice     & Partially achieved & Grounding enforced in prompt, schema and service; MRR 0.787, Recall@5 0.903; query-construction defect found and fixed (MRR 0.509 $\rightarrow$ 0.839 on affected queries); 3 of 5 ablations run; faithfulness unmeasured. \\
+		O4 Safety              & Achieved     & Held-out bilingual set frozen before the rule was written: precision 1.000, recall 0.867, F1 0.929; indirect ideation 11/14; no false positives on lethal-sounding idioms. \\
+		O5 Reproducibility     & Achieved     & Frozen split, hash-keyed LLM cache, per-script artefacts, explicit ``not run'' markers; 341 passing tests in CI. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+Three conclusions follow. First, \textbf{the engineering is ahead of the evidence}. A complete, tested, safety-gated pipeline exists and runs, but it has not yet been shown to detect stress in real student writing: the synthetic data makes every classification figure a measure of template recognition, and near-duplicate and label-ceiling analyses show that more modelling effort cannot fix this - only real data can. Second, \textbf{measurement changed the system for the better}: evaluating retrieval exposed a query construction that was discarding a third of retrieval effectiveness, and evaluating the crisis rule on unseen phrasing exposed that the original rule caught almost no indirect ideation. Both were fixed using procedures designed to avoid fitting the test data. Third, \textbf{the architectural decisions hold up}: the ablation shows the LLM adds no classification value beyond the questionnaire it is shown, which supports the choice to let the validated instrument set the headline and confine the LLM to explanation and grounded suggestions.
+
+The thesis phase will therefore focus on evidence rather than features: a consented real-data study, independent validation of the crisis rule, and measurement of generation faithfulness. The system screens and estimates; it does not diagnose, and it is intended to lower the barrier to human support, never to replace it.

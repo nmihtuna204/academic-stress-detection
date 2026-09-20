@@ -59,7 +59,7 @@ I would like to thank my supervisor, [SUPERVISOR NAME], for guidance throughout 
 
 Academic stress is a persistent concern among Vietnamese university students, yet help-seeking remains low and institutional counselling capacity is limited. This report presents the design, implementation, and preliminary evaluation of a web application that estimates academic stress levels from free text and validated psychometric instruments, and returns coping suggestions grounded in a curated knowledge base. The system combines deterministic scoring of the DASS-21 and PSS-10 instruments, a PhoBERT-based classifier fine-tuned for three-class stress prediction, and a retrieval-augmented large language model producing an explanation and three actionable suggestions. A deterministic crisis-detection rule executes before any language-model call and, when triggered, suppresses the assessment entirely in favour of mental-health helpline information.
 
-Four systems were compared on one frozen, stratified 70-item test split in a unified four-class label space. TF-IDF with logistic regression reached accuracy 0.686 and macro-F1 0.682, the fine-tuned PhoBERT classifier 0.657 and 0.533, zero-shot prompting 0.529 and 0.524, and the full proposed pipeline 0.529 and 0.509. The classical baseline therefore outperformed every neural and generative system tested, and the full pipeline did not improve on zero-shot prompting; both results are read in §5.1 as evidence about the template-generated dataset rather than about the modelling approaches. The crisis-detection rule, measured against a fifty-item hand-labelled Vietnamese test set it was deliberately not tuned against, yielded precision 0.800, recall 0.500, and F1 0.615, detecting explicit self-harm phrasing in ten of ten cases but indirect ideation in only one of nine. A second fifty-item set, written in English because the application no longer accepts Vietnamese by default, reproduced the same shape, confirming the limitation was structural rather than a gap in language coverage. The rule was subsequently rebuilt around six constructs drawn from suicide-risk assessment rather than a longer list of fixed phrases, and evaluated on a third set of sixty bilingual items written and frozen before the new patterns existed: precision rose from 0.600 to 1.000 and recall from 0.200 to 0.867 on that held-out set, with indirect ideation improving from none of fourteen to eleven of fourteen and no false positives across twenty deliberately lethal-sounding idioms. Retrieval quality was measured over a purpose-built 57-query labelled set, giving MRR 0.787 and Recall@5 0.903, and a paired comparison of query constructions located a defect in the pipeline itself: reducing a student's text to matched lexicon keywords before retrieving cost 0.269 MRR against retrieving on the sentence. The construction was rewritten on that evidence, raising MRR from 0.509 to 0.839 on the queries it affects. Results for the component ablation and answer faithfulness are marked `[TBD-EXPERIMENT]` and have not been produced. The principal limitation is the data: all classification results were computed on text generated from forty-one Vietnamese sentence templates, and a measurement conducted for this report found each test item to be a median 0.799 similar to its nearest training item, with 34 of 70 exceeding 0.80. These figures therefore characterise template memorisation rather than stress detection. Infrastructure for a real-data study is implemented and verified, but no human participants have contributed data. The system screens and estimates; it does not diagnose.
+Four systems were compared on one frozen, stratified 70-item test split in a unified four-class label space. TF-IDF with logistic regression reached accuracy 0.686 and macro-F1 0.682, the fine-tuned PhoBERT classifier 0.657 and 0.533, zero-shot prompting 0.529 and 0.524, and the full proposed pipeline 0.486 and 0.500. The classical baseline therefore outperformed every neural and generative system tested, and the full pipeline did not improve on zero-shot prompting; both results are read in §5.1 as evidence about the template-generated dataset rather than about the modelling approaches. The crisis-detection rule, measured against a fifty-item hand-labelled Vietnamese development set, yielded precision 0.800, recall 0.500, and F1 0.615, detecting explicit self-harm phrasing in ten of ten cases but indirect ideation in only one of nine. A second fifty-item English set was used as another development set; the deployed application accepts both languages, but PhoBERT runs only on Vietnamese input. The rule was subsequently rebuilt around six constructs drawn from suicide-risk assessment rather than a longer list of fixed phrases, and evaluated on a third set of sixty bilingual items written and frozen before the new patterns existed: precision rose from 0.600 to 1.000 and recall from 0.200 to 0.867 on that held-out set, with indirect ideation improving from none of fourteen to eleven of fourteen and no false positives across twenty deliberately lethal-sounding idioms. Retrieval quality was measured over a purpose-built 57-query labelled set, giving MRR 0.787 and Recall@5 0.903, and a paired comparison of query constructions located a defect in the pipeline itself: reducing a student's text to matched lexicon keywords before retrieving cost 0.269 MRR against retrieving on the sentence. The construction was rewritten on that evidence, raising MRR from 0.509 to 0.839 on the queries it affects. Component ablation was run on a stratified 40-item subsample, while generator faithfulness, human evaluation, multi-seed uncertainty, and end-to-end generation latency remain explicitly unmeasured. The principal limitation is the data: all classification results were computed on text generated from forty-one Vietnamese sentence templates, and a measurement conducted for this report found each test item to be a median 0.799 similar to its nearest training item, with 34 of 70 exceeding 0.80. These figures therefore characterise template memorisation rather than stress detection. Infrastructure for a real-data study is implemented and verified, but no human participants have contributed data. The system screens and estimates; it does not diagnose.
 
 **Keywords:** academic stress, Vietnamese natural language processing, PhoBERT, retrieval-augmented generation, DASS-21, PSS-10, mental-health screening
 
@@ -94,11 +94,11 @@ Four systems were compared on one frozen, stratified 70-item test split in a uni
 | Figure 4. 3 | Confusion matrix — fine-tuned PhoBERT | `data/eval/confusion_phobert_ft.png` |
 | Figure 4. 4 | Confusion matrix — TF-IDF + LogReg | `data/eval/confusion_tfidf_lr.png` |
 | Figure 4. 5 | Macro-F1 across systems | `data/eval/fig_4_6_macro_f1.png` |
-| Figure 4. 6 | Ablation — effect of each component | `[TBD-EXPERIMENT: eval_ablation]` |
+| Figure 4. 6 | Ablation — effect of each component | `data/eval/ablation.png` |
 | Figure 4. 7 | RAG Recall@k and nDCG@k | `data/eval/retrieval_eval.md` (Tables 4.7–4.8) |
 | Figure 4. 8 | Per-stage latency, p50 to p95 | `data/eval/fig_4_9_latency.png` |
 | Figure 4. 9 | UI screenshots (7 states) | `[TBD-EXPERIMENT: screenshots]` |
-| Figure 4. 10 | Safety red-team outcomes | `[TBD-EXPERIMENT: eval_safety]` |
+| Figure 4. 10 | Safety red-team outcomes | not run |
 
 ## LIST OF TABLES
 
@@ -107,14 +107,18 @@ Four systems were compared on one frozen, stratified 70-item test split in a uni
 | Table 3. 1 | DASS-21 subscale items and severity cut-offs | computed |
 | Table 3. 2 | PSS-10 scoring parameters | computed |
 | Table 3. 3 | Unified four-class label mapping | computed |
-| Table 4. 1 | Dataset statistics per class and split | computed |
-| Table 4. 2 | Hyperparameters of every model | computed |
-| Table 4. 3 | Main results: all systems | computed for 4 of 8 systems |
-| Table 4. 4 | Per-class precision/recall/F1, fine-tuned PhoBERT | computed |
-| Table 4. 5 | Ablation results | `[TBD-EXPERIMENT]` |
-| Table 4. 6 | RAG retrieval and faithfulness | `[TBD-EXPERIMENT]` |
-| Table 4. 7 | Safety evaluation: crisis rule | computed |
-| Table 4. 8 | Latency and cost | `[TBD-EXPERIMENT]` |
+| Table 4. 1 | Technology stack | computed |
+| Table 4. 2 | Dataset statistics per class and split | computed |
+| Table 4. 3 | Hyperparameters of every model | computed |
+| Table 4. 4 | Main results: all systems | computed for 6 systems |
+| Table 4. 5 | Per-class precision/recall/F1, fine-tuned PhoBERT | computed |
+| Table 4. 6 | Ablation results | computed for 3 of 5 configurations |
+| Table 4. 7 | RAG retrieval quality | computed; faithfulness not measured |
+| Table 4. 8 | RAG query-construction comparison | computed |
+| Table 4. 9 | RAG faithfulness | not measured |
+| Table 4. 10 | Safety evaluation: crisis rule details | computed |
+| Table 4. 11 | Safety per-category accuracy | computed |
+| Table 4. 12 | Latency of the deterministic pipeline | deterministic path computed; generation not measured |
 | Table 5. 1 | Comparison against published related work | partially computed |
 
 \newpage
@@ -197,7 +201,7 @@ The **Depression Anxiety Stress Scales — 21 item version (DASS-21)** was deriv
 
 The **Perceived Stress Scale (PSS)** was introduced by Cohen, Kamarck, and Mermelstein [2] to measure the degree to which life circumstances are appraised as unpredictable, uncontrollable, and overloading. The ten-item form used here rates each item 0–4 over the preceding month, with four positively worded items reverse-scored. Cohen and Williamson [3] later published normative data for a United States probability sample. It is worth stating plainly that Cohen did not publish clinical cut-off scores for the PSS-10; the tripartite 0–13 / 14–26 / 27–40 division used throughout applied research, and adopted in this work, is a widely reproduced convention rather than a validated threshold, and §3.3 treats it accordingly.
 
-Both instruments have been translated into Vietnamese, and validation work on the Vietnamese DASS-21 has been published [4] `[VERIFY]`. The situation for the Vietnamese PSS-10 is less clear within the scope of this review. An earlier revision of this system deployed such Vietnamese wording; the system now deploys the original published English items of both instruments, which is why §5.4 no longer treats item provenance as an open construct-validity threat.
+Both instruments have been translated into Vietnamese, and validation work on the Vietnamese DASS-21 has been published [4]. The situation for the Vietnamese PSS-10 is less clear within the scope of this review. An earlier revision of this system deployed such Vietnamese wording; the system now deploys the original published English items of both instruments, which is why §5.4 no longer treats item provenance as an open construct-validity threat.
 
 ## 2.2 Machine learning for mental-health detection from text
 
@@ -221,7 +225,7 @@ Vietnamese NLP faces the structural challenges described in §1.1, and two resou
 
 **XLM-RoBERTa** [11] offers a multilingual alternative pre-trained on one hundred languages including Vietnamese. It is a natural comparator for a Vietnamese classification task, though it is not evaluated in this work (§4.4).
 
-**ViSoBERT** [12] `[VERIFY]` targets Vietnamese social-media text specifically, and is therefore of interest for the teencode and code-switching phenomena described in §1.1.
+**ViSoBERT** [12] targets Vietnamese social-media text specifically, and is therefore of interest for the teencode and code-switching phenomena described in §1.1.
 
 For sentence-level semantic retrieval, **Sentence-BERT** [13] established the bi-encoder architecture, and the multilingual distillation approach of Reimers and Gurevych [14] produced the multilingual sentence encoders on which this system's retrieval component depends.
 
@@ -245,7 +249,7 @@ Table 2.1 summarises representative related work along the dimensions relevant t
 |---|---|---|---|---|---|
 | Lovibond & Lovibond [1] | English | Clinical + community samples | Factor-analytic instrument development | Subscale reliability, factor structure | Self-report instrument; no text modality |
 | Cohen et al. [2] | English | Community samples | Instrument development | Internal consistency, correlations | No clinical cut-offs published |
-| Tran et al. [4] `[VERIFY]` | Vietnamese | Rural community cohort | Translation + validation of DASS-21 | Screening sensitivity/specificity | Not a student population; no text modality |
+| Tran et al. [4] | Vietnamese | Rural community cohort | Translation + validation of DASS-21 | Screening sensitivity/specificity | Not a student population; no text modality |
 | CLPsych shared tasks [6] | English | Twitter | Supervised classification | Precision/recall/F1 | English; public social-media register |
 | Turcan & McKeown [7] | English | Reddit (Dreaddit) | Supervised classification | Accuracy, F1 | English; public posts, not self-report |
 | Losada & Crestani [8] | English | Reddit, sequential | Early-risk detection | ERDE, F1 | English; longitudinal data unavailable here |
@@ -300,7 +304,7 @@ graph TB
     S3 --> D3
     S4 --> D1
     E4 --> D2
-    S5 -->|OpenAI API| EXT(["gpt-4o-mini"])
+    S5 -->|OpenAI-compatible API| EXT(["gpt-oss-120b<br/>served by Groq"])
 ```
 
 The rationale for each component choice is as follows. **Streamlit** was selected for the frontend because the interface is a linear multi-page form with charting, for which Streamlit's declarative model is well suited and which requires no separate frontend build pipeline. **FastAPI** provides typed request and response validation through Pydantic, automatic OpenAPI documentation, and native asynchronous support, the last of which matters because the language-model call dominates end-to-end latency. **SQLite** was chosen over a client-server database because the deployment target is a single machine and the data volume is small; the schema is portable to PostgreSQL without modification. **ChromaDB** provides a persistent local vector store requiring no separate service. **PhoBERT** is the standard Vietnamese encoder (§2.3). The separation of frontend and backend across an HTTP boundary is deliberate: it permits the scoring and safety logic to be tested and evaluated independently of any user interface, and it is what allows the evaluation harness in Chapter 4 to exercise exactly the production code path.
@@ -539,10 +543,10 @@ A validity caveat applies to system (iv). Its prompt contains the DASS-21 and PS
 | Vector store | ChromaDB | 23-chunk knowledge index, cosine HNSW |
 | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` | Multilingual sentence encoding |
 | LLM orchestration | LangChain (LCEL) | `prompt \| llm \| parser` chain |
-| LLM | `gpt-4o-mini`, temperature 0.2 | Assessment generation |
+| LLM | `openai/gpt-oss-120b` served by Groq through an OpenAI-compatible endpoint (provider is a configuration value), temperature 0.2 | Assessment generation |
 | Classical ML | scikit-learn | TF-IDF baseline, metrics |
 | Visualisation | Plotly (UI), Matplotlib (figures) | Charts and evaluation plots |
-| Testing | pytest, pytest-cov | 245 tests |
+| Testing | pytest, pytest-cov | 337 tests |
 | Quality | Ruff, GitHub Actions | Linting and CI |
 | Packaging | Docker, Docker Compose | Reproducible deployment |
 
@@ -550,7 +554,7 @@ A validity caveat applies to system (iv). Its prompt contains the DASS-21 and PS
 
 **Hardware and environment.** Fine-tuning and all evaluation were performed on CPU (Windows 11, Python 3.13). The published continuous-integration workflow runs on Ubuntu with Python 3.11 and CPU-only PyTorch.
 
-**Verification status.** The test suite comprises **245 tests, all passing**, with **83 % statement coverage of `app/`**. Coverage of the components on which correctness most depends is higher: the scoring engines and the crisis rule are at 100 %, the retriever at 100 %, the persistence models at 100 %, the assessment orchestration at 90 %, the API layer at 97 %, and the LLM chain at 85 %.
+**Verification status.** The test suite comprises **337 tests, all passing**, with **94 % statement coverage of the application code** (`app/` excluding the offline evaluation tooling in `app/eval/`; 70 % when that tooling is included, because the latency and figure scripts are exercised by running them rather than by tests). Coverage of the components on which correctness most depends is higher still: the scoring engines and the crisis rule are at 100 %, the retriever at 100 %, the persistence models at 100 %, the assessment orchestration at 95 %, the API layer at 97 %, and the LLM chain at 88 %.
 
 **Implementation challenges and resolutions.** Four are worth recording.
 
@@ -608,8 +612,8 @@ Mean text length is **46.3 words**. The corpus contains **466 distinct texts and
 | | Loss | Class-weighted cross-entropy |
 | | Seed | 42 |
 | | Selection | Best validation macro-F1 |
-| LLM (zero-shot) | Model | `gpt-4o-mini`, temperature 0.0 |
-| LLM (proposed) | Model | `gpt-4o-mini`, temperature 0.2, timeout 60 s |
+| LLM (zero-shot) | Model | `openai/gpt-oss-120b` (Groq), temperature 0.0 |
+| LLM (proposed) | Model | `openai/gpt-oss-120b` (Groq), temperature 0.2, timeout 60 s |
 | Retrieval | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` |
 | | k | 4, cosine distance, no threshold, no rerank |
 
@@ -627,10 +631,10 @@ Mean text length is **46.3 words**. The corpus contains **466 distinct texts and
 | PhoBERT fine-tuned | 70 | 0.6571 | 0.5329 | 0.5156 | 0.8421 | 0.6809 | 0.6087 | 0.0000 |
 | LLM zero-shot | 70 | 0.5286 | 0.5238 | 0.3892 | 0.8421 | 0.3750 | 0.3158 | 0.5625 |
 | LLM few-shot (k = 5) | — | `[TBD-EXPERIMENT: eval_classifier]` | — | — | — | — | — | — |
-| **Proposed (full pipeline)** | — | **not run** | — | — | — | — | — | — |
+| **Proposed (full pipeline)** | 70 | 0.4857 | 0.5000 | 0.3105 | 0.7333 | 0.6061 | 0.3529 | 0.3077 |
 | XLM-R base | — | `[TBD-EXPERIMENT: eval_classifier]` | — | — | — | — | — | — |
 
-*All figures computed on synthetic data with a single seed. Mean ± standard deviation over three seeds and bootstrap confidence intervals are* `[TBD-EXPERIMENT: bootstrap_ci]`. *The two language-model rows were produced with* `openai/gpt-oss-120b` *served by Groq, not the* `gpt-4o-mini` *assumed in §3.6; the model that produced a number is named with it. The remaining rows have no numbers because those systems are not implemented, and the harness writes an explicit "not run" marker rather than an estimate.*
+*All figures computed on synthetic data with a single seed. Mean ± standard deviation over three seeds and bootstrap confidence intervals are* `[TBD-EXPERIMENT: bootstrap_ci]`. *The two language-model rows were produced with* `openai/gpt-oss-120b` *served by Groq — the model that §3.6 now names — and the model that produced a number is named with it. The remaining rows have no numbers because those systems are not implemented, and the harness writes an explicit "not run" marker rather than an estimate.*
 
 The majority-class row is the floor: predicting the most frequent training label for every item yields accuracy 0.329 and, by definition, Cohen's κ of exactly zero. Every other system clears it, so each is doing something, but the distance from that floor is the honest measure of how much.
 
@@ -638,7 +642,7 @@ Four observations follow directly from Table 4.4 and are developed in §5.1.
 
 First, **the classical TF-IDF baseline attains the highest macro-F1 of any system measured, including the proposed pipeline.** This is not a defence of n-grams over transformers in general. It is a statement about the data: the corpus is assembled from 41 recurring templates (§3.3), and a bag of word bigrams is exceptionally well suited to recognising recurring surface forms. The result is therefore best read as further evidence for the dataset critique in §5.3 rather than as a comparison of modelling approaches, and it is the single clearest illustration of why the real-data study matters.
 
-Second, **the proposed system has no reportable score, and an earlier one has been withdrawn.** A previous run reported macro-F1 0.509 for the full pipeline, below the 0.524 of zero-shot prompting, and this text drew the conclusion that the added retrieval, questionnaire and emotion signals bought no measurable accuracy. That conclusion is no longer supported, for two independent reasons. The evaluation harness was found to construct its retrieval query differently from the deployed application, returning a different top-four passage set on 53 % of items, so the figure did not describe the system this report proposes. And the re-run on 2026-09-08 completed 38 of 70 items before the provider's daily token cap was reached, leaving 46 % of items without a prediction — above the 20 % threshold at which the harness refuses to publish a number, because the metrics would describe the fallback label rather than the system. The comparison against zero-shot is therefore open, not settled, and the component ablation that would localise any difference remains unrun (§4.5).
+Second, **the proposed system does not outperform zero-shot prompting, and this time the comparison is clean.** The full pipeline reaches macro-F1 0.5000 against zero-shot's 0.5238. An earlier run reported a similar gap and it was withdrawn, because that run was confounded twice: the evaluation harness constructed its retrieval query differently from the deployed application, returning a different top-four passage set on 53 % of items, and a subsequent re-run reached the provider's daily token cap after 38 of 70 items, leaving 46 % of items without a prediction. The re-run on 2026-09-10 carries neither confound — the retrieval path is the deployed one, and all seventy items produced usable predictions with `parse_failures=0, rate_limited=0, call_failures=0`. The negative comparison is therefore a result rather than an artefact. Its interpretation is developed in §4.5: removing the questionnaire scores collapses the configuration to the majority-class floor, so the 0.5000 it does achieve is largely attributable to being shown the quantities from which the label is derived, not to reading the text.
 
 Third, **an earlier claim about why that figure was low turns out not to have been evidence-based.** This section previously stated that seven of seventy responses "were not valid JSON", attributing the shortfall to the model's formatting. The harness counted those failures and then discarded the replies, so nothing in the artefact distinguished a malformed reply from a request the provider refused. Failures are now retained and classified by cause. In the 2026-09-08 run, of 32 unusable responses **31 were HTTP 429 rate-limit refusals and exactly one was malformed JSON** — a confidence value written as `0. nine`, the digit spelled as a word. Among requests that actually reached the model the parse-failure rate is therefore 1 in 39, not 1 in 10, and the earlier sentence overstated a weakness of the model while understating a limitation of the account. Evaluation pins temperature to zero for reproducibility regardless.
 
@@ -666,19 +670,25 @@ Errors are almost entirely between adjacent classes: of the fourteen misclassifi
 
 ## 4.5 Ablation results
 
-**Table 4. 6: Ablation over proposed-system components** — `[TBD-EXPERIMENT: eval_ablation]`
+**Table 4. 6: Ablation over proposed-system components** (`data/eval/ablation.md`; stratified 40/70-item subsample, seed 42, identical across configurations)
 
 | Configuration | RAG | Questionnaire | Emotion | Accuracy | Macro-F1 | Δ Macro-F1 |
 |---|:--:|:--:|:--:|---:|---:|---:|
-| full | ✓ | ✓ | ✓ | `[TBD]` | `[TBD]` | — |
-| no_rag | ✗ | ✓ | ✓ | `[TBD]` | `[TBD]` | `[TBD]` |
-| no_questionnaire | ✓ | ✗ | ✓ | `[TBD]` | `[TBD]` | `[TBD]` |
-| no_emotion | ✓ | ✓ | ✗ | `[TBD]` | `[TBD]` | `[TBD]` |
-| text_only | ✗ | ✗ | ✗ | `[TBD]` | `[TBD]` | `[TBD]` |
+| full | ✓ | ✓ | ✓ | 0.525 | 0.5339 | — |
+| no_questionnaire | ✓ | ✗ | ✓ | 0.325 | 0.1226 | **−0.4113** |
+| no_emotion | ✓ | ✓ | ✗ | 0.600 | 0.5925 | +0.0586 |
+| no_rag | ✗ | ✓ | ✓ | not run | not run | — |
+| text_only | ✗ | ✗ | ✗ | not run | not run | — |
 
-The five-configuration harness is implemented, unit-tested against a mocked language model, and wired through the identical engine that produces the headline proposed-system result. It has not been executed because it requires a valid API key. The runner writes an explicit "not run" marker file rather than an empty or estimated table. The word-segmentation ablation described in §3.2 is additionally `[TBD-EXPERIMENT: eval_segmentation]`.
+Three of the five configurations were executed on 2026-09-10. Every figure rests on forty items, so **the sampling-noise floor is ±0.148 on accuracy** (95 % Wilson interval, worst case *p* = 0.5); the harness computes this itself and declines to give a direction to any delta inside it.
 
-**Figure 4. 7: Ablation — effect of each component** — `[TBD-EXPERIMENT: eval_ablation]`
+**Removing the questionnaire scores is the one unambiguous result.** Macro-F1 falls from 0.534 to **0.123** — against a majority-class floor of 0.1237. The configuration collapses to guessing. Because those scores are the inputs from which the ground-truth label is derived (§3.6), this delta measures label leakage at least as much as feature value, and it quantifies a caveat that §4.4 had previously been able to state only qualitatively: substantially all of the proposed system's apparent agreement comes from being shown the quantities that define the answer.
+
+**Removing the emotion features changes nothing that can be measured at this sample size.** The point estimate improves by 0.059, but that is inside the noise floor, so no direction is claimed. The defensible reading is that the fine-tuned classifier's signal contributes nothing detectable to the generative layer on this dataset — not that removing it helps.
+
+**The two remaining configurations failed for a reason worth recording, and it is not quota.** Both `no_rag` and `text_only` disable retrieval. With no retrieved material the model correctly obeys prompt rule 4 — it declines to invent suggestions and returns an empty `suggestions` list — but `LlmAssessment` still constrains that field to `min_length=1`, so Pydantic rejects an otherwise valid reply. On `text_only`, 29 of 40 replies (72 %) were discarded this way, above the 20 % threshold at which the harness refuses to publish, and the configuration is recorded as not run. The failing replies are captured verbatim in `data/eval/llm_cache/_parse_failures/`. This is a schema defect rather than a model failure: the grounding rule and the output contract disagree about whether zero suggestions is a legitimate answer. The word-segmentation ablation described in §3.2 remains `[TBD-EXPERIMENT: eval_segmentation]`.
+
+**Figure 4. 7: Ablation — effect of each component** (`data/eval/ablation.png`)
 
 ## 4.6 Retrieval-augmented generation evaluation
 
@@ -733,7 +743,7 @@ Six queries returned no relevant chunk within the production $k = 4$; all are li
 
 The crisis-detection rule was evaluated against a purpose-built test set of **50 hand-written Vietnamese items**, committed to the repository as source data. The set comprises 20 true positives spanning explicit and indirect ideation, 20 hard negatives including hyperbole and reported speech, and 10 borderline items each carrying a written annotation rationale. Borderline labelling policy was fixed in advance: a passive death wish or any mention of ideation is labelled positive, whereas hopelessness or burdensomeness without a death reference is labelled negative for the purposes of the *bypass* rule. **The rule was not modified in response to this set**; the set is the measuring instrument, not a tuning target.
 
-**Table 4. 8: Crisis-detection rule evaluation (n = 50)**
+**Table 4. 10: Crisis-detection rule evaluation (n = 50)**
 
 | Quantity | Value |
 |---|---:|
@@ -745,7 +755,7 @@ The crisis-detection rule was evaluated against a purpose-built test set of **50
 | **Recall** | **0.500** |
 | **F1** | **0.615** |
 
-**Table 4. 9: Per-category accuracy**
+**Table 4. 11: Per-category accuracy**
 
 | Category | Correct / total |
 |---|---:|
@@ -765,7 +775,7 @@ The correct characterisation of this component, and the one carried into §5.3, 
 
 ## 4.8 Latency and cost
 
-**Table 4. 10: Latency of the deterministic pipeline** (`data/eval/latency.md`, regenerate with `python -m app.eval.latency_eval --repeats 30`)
+**Table 4. 12: Latency of the deterministic pipeline** (`data/eval/latency.md`, regenerate with `python -m app.eval.latency_eval --repeats 30`)
 
 | Stage | p50 (ms) | p95 (ms) |
 |---|---:|---:|
@@ -783,7 +793,7 @@ The correct characterisation of this component, and the one carried into §5.3, 
 
 Measured 2026-09-08 on the development machine (CPU only), thirty runs per stage on real dataset text.
 
-Three things follow. First, **the whole deterministic pipeline costs under 90 ms at p50** — the scoring arithmetic, the safety rule, the lexicon, retrieval and the classifier combined. Second, **the safety rule that gates every request costs 0.05 ms**, so running it before anything else, including before persistence, is free; there is no performance argument against the ordering §3.7 describes. Third, **cold start is roughly 21 s** across both models, which is paid once per process and is the reason the API loads them lazily on first request rather than in the startup hook.
+Three things follow. First, **the whole deterministic pipeline costs under 90 ms at p50** — the scoring arithmetic, the safety rule, the lexicon, retrieval and the classifier combined. Second, **the safety rule that gates every request costs 0.05 ms**, so running it before any side effect — before persistence and before the external call — is free; there is no performance argument against the ordering §3.7 describes. Third, **cold start is roughly 21 s** across both models, which is paid once per process and is the reason the API loads them lazily on first request rather than in the startup hook.
 
 What remains unmeasured is the generation call itself, and with it tokens and cost per session. Each measurement is a real billable request and the day's provider quota was consumed by the comparison run of §4.4; the harness takes token counts from the provider's own `usage_metadata` rather than a character heuristic, so those cells stay empty rather than estimated. On the configured provider (Groq free tier) the monetary cost is zero and the binding constraint is a 200,000-token daily cap, not price.
 
@@ -885,7 +895,7 @@ One consequence must be stated plainly, because it is a gap between what was eva
 
 **Consent and data protection — previously identified gaps, and their current state.** An earlier revision of this system made commitments in the offline consent instrument that the implementation did not keep. Three were recorded; two have since been closed, and an honest report should show both the discrepancy and its resolution.
 
-- The consent document states that free text may be transmitted to a third-party language-model service. The in-app consent screen did not state this. **Closed:** the checklist now names OpenAI and its jurisdiction explicitly, before any data entry.
+- The consent document states that free text may be transmitted to a third-party language-model service. The in-app consent screen did not state this. **Closed:** the checklist names the configured provider and its jurisdiction explicitly, before any data entry; the name is resolved from the configured endpoint at runtime (currently Groq, United States), so a provider change cannot silently invalidate the consent text again.
 - The document specifies a retention period of at most twelve months followed by permanent deletion. No retention or deletion mechanism existed. **Partly closed:** `DELETE /session/{student_id}` erases every row for an identifier across all five tables and is exposed as a two-step control on the history page, and the retention period is now stated in the in-app consent. **Still open:** deletion is participant-initiated only; there is no scheduled expiry that enforces the twelve-month limit automatically.
 - The document tells participants they may request deletion by quoting their anonymous code. That code is still displayed only at the foot of the history page, so a participant who stops at the results page never sees it and cannot exercise the right after their session ends. **Still open.**
 - Two further protections were added alongside these: a crisis disclosure is no longer persisted at all (§3.7), and the validated instrument, not the language model, now determines the headline level (§5.4).
@@ -913,15 +923,15 @@ Three cautions attach. A screening result must never gate access to human suppor
 
 This report presented the design, implementation, and preliminary evaluation of a Vietnamese-language academic-stress screening application combining validated psychometric instruments, a fine-tuned Vietnamese transformer classifier, and a retrieval-augmented generative advisory layer behind a deterministic safety gate. Each objective is restated below against its measured outcome.
 
-**O1 — Implement both instruments exactly per their published manuals, deterministically and testably. Achieved.** DASS-21 subscale composition, the doubling multiplier, and all five severity bands per subscale were verified item-by-item against the published manual with no deviation; PSS-10 reverse-scoring of items 4, 5, 7, and 8 and the 0–40 total were likewise verified. Both scorers reject malformed input, and both are covered by tests at 100 % statement coverage within a suite of **279 passing tests at 83 % coverage of the application package**. The qualification recorded in §5.3 is that the PSS-10 band thresholds are a convention rather than published cut-offs; the item-wording qualification no longer applies, as both instruments now deploy their original published English wording.
+**O1 — Implement both instruments exactly per their published manuals, deterministically and testably. Achieved.** DASS-21 subscale composition, the doubling multiplier, and all five severity bands per subscale were verified item-by-item against the published manual with no deviation; PSS-10 reverse-scoring of items 4, 5, 7, and 8 and the 0–40 total were likewise verified. Both scorers reject malformed input, and both are covered by tests at 100 % statement coverage within a suite of **337 passing tests at 94 % coverage of the application code (70 % including the offline evaluation scripts)**. The qualification recorded in §5.3 is that the PSS-10 band thresholds are a convention rather than published cut-offs; the item-wording qualification no longer applies, as both instruments now deploy their original published English wording.
 
-**O2 — Fine-tune a Vietnamese encoder and evaluate it against baselines on one identical split. Partially achieved.** Five systems produced measurements on the frozen 70-item test split: the majority-class floor at **accuracy 0.329, macro-F1 0.124, κ 0.000**, TF-IDF with logistic regression at **0.686, 0.682, 0.581**, TF-IDF with SVM at **0.657, 0.652, 0.542**, the fine-tuned PhoBERT classifier at **0.657, 0.533, 0.516**, and zero-shot prompting at **0.529, 0.524, 0.389**. On the three-class task the fine-tuned model reached **test accuracy 0.800 and macro-F1 0.801**. The full proposed pipeline produced no reportable figure, which is why this objective is only partially achieved.
+**O2 — Fine-tune a Vietnamese encoder and evaluate it against baselines on one identical split. Achieved with qualifications.** Six systems produced measurements on the frozen 70-item test split: the majority-class floor at **accuracy 0.329, macro-F1 0.124, κ 0.000**, TF-IDF with logistic regression at **0.686, 0.682, 0.581**, TF-IDF with SVM at **0.657, 0.652, 0.542**, the fine-tuned PhoBERT classifier at **0.657, 0.533, 0.516**, zero-shot prompting at **0.529, 0.524, 0.389**, and the full proposed pipeline at **0.486, 0.500, 0.311**. On the three-class task the fine-tuned model reached **test accuracy 0.800 and macro-F1 0.801**. The qualification is that all classification results use synthetic, template-generated text and a single seed.
 
 The objective was to measure, and the measurement is unflattering: the classical baseline leads every neural and generative system that produced a number. §5.1 establishes that the four-class macro-F1 comparison is dominated by a structural class deficit and an intrinsic label ceiling of approximately 0.79, and that on the three classes the transformer can predict it matches or exceeds the classical baseline on every one.
 
-An earlier version of this section reported the proposed pipeline at **0.529, 0.509, 0.378** and concluded that it did not improve on zero-shot prompting. That figure has been withdrawn and the conclusion with it, for the two reasons set out in §4.4: the evaluation harness was constructing its retrieval query differently from the deployed application, returning a different passage set on 53 % of items, so the number did not describe the proposed system; and the corrected re-run reached the provider's daily token cap after 38 of 70 items, leaving too many items without a prediction for any score to be meaningful. Whether the full pipeline improves on zero-shot prompting is therefore an open question in this report rather than a settled negative result. A third qualification stands regardless: the system receives the questionnaire scores from which the ground truth is derived, so any agreement it achieves is partly circular, and the `no_questionnaire` ablation that would resolve this remains unrun (O3).
+An earlier version of this section reported the proposed pipeline at **0.529, 0.509, 0.378** and concluded that it did not improve on zero-shot prompting. That figure was withdrawn because the run behind it was confounded twice — a retrieval query that differed from the deployed application on 53 % of items, and a provider quota cap that left 46 % of items without a prediction. The measurement was repeated on 2026-09-10 with both confounds removed and all seventy items usable, giving **0.4857, 0.5000, 0.3105**. The original conclusion is therefore restored on sound evidence rather than withdrawn: the full pipeline does not improve on zero-shot prompting on this dataset. The third qualification not only stands but is now quantified — the system receives the questionnaire scores from which the ground truth is derived, and the `no_questionnaire` ablation (§4.5) shows that removing them drops macro-F1 from 0.534 to 0.123, against a majority-class floor of 0.1237. Its agreement is therefore substantially circular (O3).
 
-**O3 — Construct a retrieval-augmented advisory module and evaluate each component's contribution. Partially achieved.** The module is implemented — six documents, 23 chunks, multilingual embeddings, cosine retrieval at $k = 4$ — and grounding is now enforced rather than merely encouraged, through an absolute prompt constraint, a citation field, service-side verification of those citations against the retrieved set, and refusal to generate when retrieval returns nothing. Retrieval quality is measured over a purpose-built 57-query labelled set: **MRR 0.787, Recall@5 0.903, nDCG@5 0.807**, and a paired comparison of six candidate query constructions which found the deployed one to be costing 0.269 MRR; it was rewritten on that evidence, raising MRR from 0.509 to 0.839 on the affected queries. What is still missing is the component ablation, which is implemented and unit-tested but has not been executed for want of an API key, and any faithfulness measurement.
+**O3 — Construct a retrieval-augmented advisory module and evaluate each component's contribution. Partially achieved.** The module is implemented — six documents, 23 chunks, multilingual embeddings, cosine retrieval at $k = 4$ — and grounding is now enforced rather than merely encouraged, through an absolute prompt constraint, a citation field, service-side verification of those citations against the retrieved set, and refusal to generate when retrieval returns nothing. Retrieval quality is measured over a purpose-built 57-query labelled set: **MRR 0.787, Recall@5 0.903, nDCG@5 0.807**, and a paired comparison of six candidate query constructions which found the deployed one to be costing 0.269 MRR; it was rewritten on that evidence, raising MRR from 0.509 to 0.839 on the affected queries. Component ablation is now available for three of five configurations on a 40-item subsample. Generator faithfulness remains unmeasured, so the objective is only partially achieved.
 
 **O4 — Implement and quantitatively evaluate a crisis-detection layer. Achieved.** The deterministic rule was measured against a purpose-built 50-item hand-labelled Vietnamese test set it was not tuned against, yielding **precision 0.800, recall 0.500, F1 0.615**, with explicit ideation detected at 10/10, indirect ideation at 1/9, and every error reported verbatim. The measurement is the objective; the operating point it revealed is judged wrong for the application, which is a finding rather than a failure of the objective.
 
@@ -933,7 +943,7 @@ The central conclusion is that the engineering of this system is substantially a
 
 The following items are ordered by the ratio of expected evidential value to implementation cost.
 
-1. **Execute the two implemented evaluations.** The baseline comparison and the five-configuration ablation are written, tested, and cached; a valid API key and two commands would populate Tables 4.4 and 4.6 in full. This is the single highest-value outstanding action in the project.
+1. **Complete the missing evidence.** The main comparison and three ablation configurations are now measured, but the two retrieval-disabled ablations, generator faithfulness, human evaluation, multi-seed uncertainty, and real-participant study remain outstanding. These are the highest-value next steps because they test whether the working prototype generalises beyond its synthetic evaluation.
 
 2. **Conduct the real-data study.** The consent instrument, participant instructions, anonymised export, quality screening, and an identical `--dataset real` evaluation path are implemented and verified. Recruiting 150–300 consenting students and re-running the entire evaluation on human-written text would convert every classification result in this report from a pipeline demonstration into evidence.
 
@@ -963,29 +973,29 @@ Beyond this list, three longer-horizon directions are worth recording: multi-tas
 
 # REFERENCES
 
-[1] P. F. Lovibond and S. H. Lovibond, "The structure of negative emotional states: Comparison of the Depression Anxiety Stress Scales (DASS) with the Beck Depression and Anxiety Inventories," *Behaviour Research and Therapy*, vol. 33, no. 3, pp. 335–343, 1995.
+[1] P. F. Lovibond and S. H. Lovibond, "The structure of negative emotional states: Comparison of the Depression Anxiety Stress Scales (DASS) with the Beck Depression and Anxiety Inventories," *Behaviour Research and Therapy*, vol. 33, no. 3, pp. 335–343, 1995, doi: 10.1016/0005-7967(94)00075-U.
 
-[2] S. Cohen, T. Kamarck, and R. Mermelstein, "A global measure of perceived stress," *Journal of Health and Social Behavior*, vol. 24, no. 4, pp. 385–396, 1983.
+[2] S. Cohen, T. Kamarck, and R. Mermelstein, "A global measure of perceived stress," *Journal of Health and Social Behavior*, vol. 24, no. 4, pp. 385–396, 1983, doi: 10.2307/2136404.
 
 [3] S. Cohen and G. M. Williamson, "Perceived stress in a probability sample of the United States," in *The Social Psychology of Health*, S. Spacapan and S. Oskamp, Eds. Newbury Park, CA: Sage, 1988, pp. 31–67.
 
-[4] T. D. Tran, T. Tran, and J. Fisher, "Validation of the depression anxiety stress scales (DASS) 21 as a screening instrument for depression and anxiety in a rural community-based cohort of northern Vietnamese women," *BMC Psychiatry*, vol. 13, art. 24, 2013. `[VERIFY]`
+[4] T. D. Tran, T. Tran, and J. R. W. Fisher, "Validation of the depression anxiety stress scales (DASS) 21 as a screening instrument for depression and anxiety in a rural community-based cohort of northern Vietnamese women," *BMC Psychiatry*, vol. 13, art. 24, 2013, doi: 10.1186/1471-244X-13-24.
 
 [5] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, "BERT: Pre-training of deep bidirectional transformers for language understanding," in *Proc. NAACL-HLT*, 2019, pp. 4171–4186.
 
-[6] G. Coppersmith, M. Dredze, C. Harman, K. Hollingshead, and M. Mitchell, "CLPsych 2015 shared task: Depression and PTSD on Twitter," in *Proc. 2nd Workshop on Computational Linguistics and Clinical Psychology*, 2015, pp. 31–39. `[VERIFY]`
+[6] G. Coppersmith, M. Dredze, C. Harman, K. Hollingshead, and M. Mitchell, "CLPsych 2015 shared task: Depression and PTSD on Twitter," in *Proc. 2nd Workshop on Computational Linguistics and Clinical Psychology: From Linguistic Signal to Clinical Reality*, Denver, CO, USA, Jun. 2015, pp. 31–39, doi: 10.3115/v1/W15-1204.
 
-[7] E. Turcan and K. McKeown, "Dreaddit: A Reddit dataset for stress analysis in social media," in *Proc. 10th Int. Workshop on Health Text Mining and Information Analysis (LOUHI)*, EMNLP, 2019, pp. 97–107. `[VERIFY]`
+[7] E. Turcan and K. McKeown, "Dreaddit: A Reddit dataset for stress analysis in social media," in *Proc. 10th Int. Workshop on Health Text Mining and Information Analysis (LOUHI 2019)*, Hong Kong, Nov. 2019, pp. 97–107, doi: 10.18653/v1/D19-6213.
 
-[8] D. E. Losada and F. Crestani, "A test collection for research on depression and language use," in *Experimental IR Meets Multilinguality, Multimodality, and Interaction (CLEF)*, 2016, pp. 28–39. `[VERIFY]`
+[8] D. E. Losada and F. Crestani, "A test collection for research on depression and language use," in *Experimental IR Meets Multilinguality, Multimodality, and Interaction: 7th Int. Conf. CLEF Association (CLEF 2016)*, Évora, Portugal, Lecture Notes in Computer Science, vol. 9822. Cham, Switzerland: Springer, 2016, pp. 28–39, doi: 10.1007/978-3-319-44564-9_3.
 
-[9] D. Q. Nguyen and A. T. Nguyen, "PhoBERT: Pre-trained language models for Vietnamese," in *Findings of EMNLP*, 2020, pp. 1037–1042.
+[9] D. Q. Nguyen and A. Tuan Nguyen, "PhoBERT: Pre-trained language models for Vietnamese," in *Findings of the Association for Computational Linguistics: EMNLP 2020*, Nov. 2020, pp. 1037–1042, doi: 10.18653/v1/2020.findings-emnlp.92.
 
 [10] T. Vu, D. Q. Nguyen, D. Q. Nguyen, M. Dras, and M. Johnson, "VnCoreNLP: A Vietnamese natural language processing toolkit," in *Proc. NAACL-HLT: Demonstrations*, 2018, pp. 56–60.
 
 [11] A. Conneau, K. Khandelwal, N. Goyal, V. Chaudhary, G. Wenzek, F. Guzmán, E. Grave, M. Ott, L. Zettlemoyer, and V. Stoyanov, "Unsupervised cross-lingual representation learning at scale," in *Proc. ACL*, 2020, pp. 8440–8451.
 
-[12] Q.-N. Nguyen, T. C. Phan, D.-V. Nguyen, and K. Van Nguyen, "ViSoBERT: A pre-trained language model for Vietnamese social media text processing," in *Proc. EMNLP*, 2023. `[VERIFY]`
+[12] N. Nguyen, T. Phan, D.-V. Nguyen, and K. Nguyen, "ViSoBERT: A pre-trained language model for Vietnamese social media text processing," in *Proc. 2023 Conf. Empirical Methods in Natural Language Processing (EMNLP)*, Singapore, Dec. 2023, pp. 5191–5207, doi: 10.18653/v1/2023.emnlp-main.315.
 
 [13] N. Reimers and I. Gurevych, "Sentence-BERT: Sentence embeddings using Siamese BERT-networks," in *Proc. EMNLP-IJCNLP*, 2019, pp. 3982–3992.
 
@@ -1003,7 +1013,7 @@ Beyond this list, three longer-horizon directions are worth recording: multi-tas
 
 [20] A. Bangor, P. Kortum, and J. Miller, "Determining what individual SUS scores mean: Adding an adjective rating scale," *Journal of Usability Studies*, vol. 4, no. 3, pp. 114–123, 2009.
 
-> **Note.** Entries marked `[VERIFY]` require confirmation of full bibliographic details before submission. See `report/CITATIONS_TO_VERIFY.md`. Claims in §1.1 concerning Vietnamese stress prevalence are deliberately unnumbered and unsourced pending verification; no prevalence figure is quoted anywhere in this report.
+> **Note.** References [4], [6], [7], [8] and [12] were verified on 2026-09-10 against the publisher record (BMC Psychiatry / Monash institutional record) and the ACL Anthology and Springer entries respectively; DOIs are given for each. Two corrections resulted: the third author of [4] is J. R. W. Fisher, and the author list of [12] follows the ACL Anthology record (N. Nguyen, T. Phan, D.-V. Nguyen, K. Nguyen). Claims in §1.1 concerning Vietnamese stress prevalence remain deliberately unnumbered and unsourced; no prevalence figure is quoted anywhere in this report. See `report/CITATIONS_TO_VERIFY.md`.
 
 \newpage
 

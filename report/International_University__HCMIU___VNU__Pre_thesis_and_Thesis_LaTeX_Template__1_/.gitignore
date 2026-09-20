@@ -1,0 +1,19 @@
+# LaTeX build artefacts (regenerate with .\build.ps1)
+*.aux
+*.log
+*.toc
+*.lof
+*.lot
+*.lol
+*.loa
+*.out
+*.bbl
+*.blg
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# The built PDF (5.7 MB per rebuild). Deliberately not tracked: the current
+# build still carries the pre-2026-09-19 results, and every recompile would add
+# another copy to history. Attach the final PDF to a GitHub release instead.
+main.pdf

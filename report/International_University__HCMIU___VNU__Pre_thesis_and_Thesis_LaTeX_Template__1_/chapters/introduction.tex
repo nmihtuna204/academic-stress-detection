@@ -1,0 +1,67 @@
+This chapter motivates the work, states the problem precisely, defines what is and is not in scope, and sets five measurable objectives against which Chapter~\ref{ch:conclusion} judges the outcome.
+
+\section{Motivation}
+Academic stress among university students is a widely documented concern, and its severity is shaped by the educational culture in which it occurs. In Vietnam, academic achievement is closely tied to family expectation and social standing, examination competition is intense, and the transition into university often coincides with relocation, financial independence and the loss of established support networks. These pressures are compounded for students in high-workload disciplines and for those who study far from their home province. Epidemiological studies of stress, anxiety and depression among Vietnamese university students exist; this report deliberately quotes no prevalence figure, because no source for one was verified within the scope of this work. The motivation rests instead on two structural factors that can be stated without a contested number.
+
+The first is the \textbf{help-seeking gap}. Mental-health stigma remains substantial, and students frequently interpret psychological distress as a personal failing rather than a health condition. Walking into a counselling office is a visible, socially costly signal, so the students who most need support are often the least likely to ask for it. The second is \textbf{capacity}: even where students are willing to seek help, the ratio of counsellors to enrolled students makes routine screening infeasible by human effort alone.
+
+A private, self-administered digital screening tool addresses both factors at once. It removes the visibility cost of the first contact and scales without consuming counsellor time. It does not replace clinical judgment; its function is to help a student notice a pattern in their own experience and, where appropriate, to lower the barrier to the next step.
+
+Building such a tool for Vietnamese students raises technical problems that are not solved by transferring an English-language system. Vietnamese diacritics carry both phonemic and tonal information, so their routine omission in informal writing is genuinely ambiguating: \vi{ma, má, mà, mả, mã, mạ} are six distinct words. Vietnamese is an isolating language in which a syllable is not a word - \vi{áp lực} (``pressure'') is two syllables and one lexical item - so whitespace tokenisation fragments meaning. Student writing adds \textit{teencode}, code-switching with English academic vocabulary, and register shifts driven by the pronoun system. Most consequentially for a supervised approach, \textbf{no public annotated Vietnamese corpus of student mental-health text exists}.
+
+\section{Problem Statement}
+Given a university student's free-text description of their recent experience, optional responses to validated psychometric instruments, and optional information about their academic and personal circumstances, the system must produce:
+
+\begin{enumerate}
+	\item an \textbf{estimated academic-stress level} on an interpretable ordinal scale (Low, Moderate, High, Severe);
+	\item an \textbf{explanation} identifying which evidence drove the estimate; and
+	\item \textbf{actionable coping suggestions} appropriate to that student's circumstances and grounded in vetted material,
+\end{enumerate}
+
+\noindent while \textit{never} producing a clinical diagnosis, and while reliably diverting students who disclose self-harm risk to human support instead of an automated assessment.
+
+Four aspects of this problem are not solved by existing work. First, the instruments used for stress screening are validated as self-report questionnaires, not as targets for text-based prediction. Second, text-based mental-health detection is overwhelmingly English-language and trained on public social-media posts, whose register differs from a private self-report. Third, LLM-generated advice carries a well-documented hallucination risk~\cite{ji2023hallucination} that is unacceptable in a mental-health context, and its standard mitigation, retrieval grounding~\cite{lewis2020rag}, is rarely evaluated as a component in its own right. Fourth, the safety layer that such systems require is frequently asserted but rarely measured.
+
+\section{Scope}
+This pre-thesis covers the design, implementation and preliminary evaluation of the system described above. The scope is bounded as follows:
+
+\begin{enumerate}
+	\item \textbf{In scope.}
+	      \begin{itemize}
+	      	\item A working web application: a \textbf{Streamlit} interface over a \textbf{FastAPI} backend, with consent, questionnaires, free text, context, results and history.
+	      	\item \textbf{Deterministic scoring} of the DASS-21~\cite{lovibond1995} and PSS-10~\cite{cohen1983} exactly as published.
+	      	\item A \textbf{PhoBERT} classifier~\cite{nguyen2020phobert} fine-tuned on Vietnamese student text.
+	      	\item A \textbf{retrieval-augmented} advisory module over a curated knowledge base, with citation verification.
+	      	\item A \textbf{crisis-detection gate} and its quantitative evaluation on labelled test sets.
+	      	\item A \textbf{reproducible evaluation harness} comparing baselines, the fine-tuned classifier and LLM systems on one frozen split.
+	      \end{itemize}
+	\item \textbf{Out of scope.}
+	      \begin{itemize}
+	      	\item \textit{Clinical validation} or any claim of diagnostic accuracy.
+	      	\item \textit{Deployment to a live student population} and longitudinal tracking.
+	      	\item \textit{Collection of real participant data}: the collection pipeline is implemented and verified, but no participant has contributed data.
+	      \end{itemize}
+\end{enumerate}
+
+\section{Objectives}
+Five measurable objectives are defined, each tied to an experiment in Chapter~\ref{ch:result}.
+
+\begin{description}[style=nextline, leftmargin=1.2cm]
+	\item[O1 - Psychometric scoring.] Implement DASS-21 and PSS-10 exactly per their published scoring rules, with deterministic, testable behaviour. \textit{Measured by} unit tests against hand-computed fixtures including all-zero, all-maximum and reverse-scored cases.
+	\item[O2 - Text classification.] Fine-tune a Vietnamese pre-trained encoder for stress classification and compare it with classical and generative baselines on one identical held-out split. \textit{Measured by} accuracy, macro-F1, Cohen's $\kappa$ and per-class F1 on the same 70-item test set.
+	\item[O3 - Grounded advice.] Build a retrieval-augmented advisory module over a curated knowledge base and evaluate each component's contribution. \textit{Measured by} retrieval metrics over a labelled query set and a component ablation.
+	\item[O4 - Safety.] Implement a crisis-detection gate and evaluate it quantitatively. \textit{Measured by} precision, recall and F1 on a held-out labelled set, with per-category breakdown and verbatim errors.
+	\item[O5 - Reproducibility.] Build an evaluation infrastructure in which no reported number exists without a script that produced it. \textit{Measured by} traceability of every figure to a versioned artefact and explicit ``not run'' markers for missing measurements.
+\end{description}
+
+\section{Contributions}
+\begin{enumerate}
+	\item \textbf{An end-to-end, working screening application} integrating validated psychometric scoring, a fine-tuned Vietnamese transformer, retrieval-augmented generation with verified citations, and a pre-persistence, pre-generative safety gate.
+	\item \textbf{A construct-based bilingual crisis-detection rule} with an evaluation procedure designed to avoid tuning on the test set: the held-out set was written and frozen before the patterns existed.
+	\item \textbf{A measured correction to the retrieval pipeline}: a paired query-construction experiment located a defect that halved retrieval effectiveness on affected queries, and the fix was chosen by measurement.
+	\item \textbf{A leakage characterisation for template-generated data}, showing that exact-duplicate checks - the usual control - give no protection when test items are near-copies of training items.
+	\item \textbf{A reproducible evaluation harness} with frozen splits, content-addressed LLM caching and explicit ``not run'' markers in place of estimates.
+\end{enumerate}
+
+\section{Structure of the Report}
+Chapter~2 reviews related work and the theory the system relies on. Chapter~3 states the requirements, use cases and algorithms. Chapter~4 presents the architecture and the design strategies behind it. Chapter~5 describes the implementation. Chapter~6 reports the prototype and every experimental result. Chapter~7 interprets the results, including strengths, limitations and comparison with related work. Chapter~8 concludes against the five objectives. The appendices contain code listings, instrument items, prompts, crisis-rule errors and reproducibility commands.

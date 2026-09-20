@@ -1,0 +1,115 @@
+This chapter reviews the literature this work builds on: stress instruments, text-based mental-health detection, Vietnamese language models, and LLMs with retrieval augmentation. It then identifies the research gap and summarises the theory used in later chapters.
+
+\section{Current Advancements}
+
+\subsection{Psychometric instruments for stress}
+Psychological stress is conventionally modelled as a perceived imbalance between environmental demand and appraised capacity to cope. Two self-report instruments dominate applied screening and are both used here. The \textbf{Depression Anxiety Stress Scales, 21-item version (DASS-21)}~\cite{lovibond1995} measures three related negative emotional states; its stress subscale targets persistent arousal, difficulty relaxing, irritability and over-reactivity. The \textbf{Perceived Stress Scale (PSS-10)}~\cite{cohen1983} measures how unpredictable, uncontrollable and overloading life is appraised to be; normative data were later published by Cohen and Williamson~\cite{cohen1988}. Cohen did not publish clinical cut-offs for the PSS-10; the common 0--13 / 14--26 / 27--40 bands are a convention, and this report treats them as such. A Vietnamese DASS-21 has been validated in a community sample~\cite{tran2013}.
+
+\subsection{Machine learning for mental-health detection from text}
+Automated detection of psychological state from text has developed in three overlapping phases. \textit{Classical feature engineering} combined lexicons, n-grams and pronoun usage with linear classifiers; these remain strong baselines because they are interpretable and need little data. \textit{Neural sequence models} improved on n-grams where large labelled sets existed. \textit{Transfer learning from pre-trained transformers}~\cite{devlin2019} changed the field by making competitive performance possible from hundreds rather than tens of thousands of labelled examples - the regime of this work.
+
+The datasets that shaped the field are English. The CLPsych 2015 shared task~\cite{coppersmith2015} evaluated depression and PTSD signals on Twitter; \textbf{Dreaddit}~\cite{turcan2019} annotated Reddit posts for stress and is the closest analogue to this task; the eRisk collection~\cite{losada2016} introduced early risk detection over sequences of posts. All are valuable methodological references, but none is directly usable here: the language differs, and so does the register - a public social-media post is a performance, a private self-report to a screening tool is not.
+
+\subsection{Vietnamese natural language processing}
+\textbf{PhoBERT}~\cite{nguyen2020phobert} is a RoBERTa-style encoder pre-trained on 20\,GB of Vietnamese text and is the standard encoder for Vietnamese classification. It was pre-trained on \textit{word-segmented} text, produced by \textbf{VnCoreNLP}~\cite{vu2018vncorenlp}, so unsegmented input differs from its pre-training distribution. \textbf{XLM-RoBERTa}~\cite{conneau2020xlmr} is a multilingual alternative covering 100 languages, and \textbf{ViSoBERT}~\cite{nguyen2023visobert} targets Vietnamese social-media text, including teencode. For semantic retrieval, \textbf{Sentence-BERT}~\cite{reimers2019sbert} introduced efficient bi-encoder sentence embeddings, and multilingual knowledge distillation~\cite{reimers2020multilingual} produced the multilingual encoder used by this system's retriever.
+
+\subsection{Large language models and retrieval-augmented generation}
+Large language models~\cite{brown2020gpt3} follow instructions and classify zero-shot, which is attractive when labelled data is scarce. They also generate fluent, confident, false statements; Ji et al.~\cite{ji2023hallucination} distinguish \textit{intrinsic} hallucination, which contradicts the source, from \textit{extrinsic} hallucination, which cannot be verified from it. \textbf{Retrieval-augmented generation (RAG)}~\cite{lewis2020rag} conditions generation on passages retrieved from a controlled corpus, constraining assertions and enabling attribution. That benefit holds only if retrieval returns relevant passages, the model actually uses them, and the system behaves safely when retrieval returns nothing - three conditions that are often assumed rather than measured. In mental-health applications the operative safety properties are not fluency or empathy but reliable escalation on risk disclosure, refusal to diagnose, and avoidance of advice that substitutes for professional care.
+
+\subsection{Usability and human evaluation}
+For future human evaluation this work adopts established instruments: Krippendorff's $\alpha$~\cite{krippendorff2004} for inter-rater agreement, the System Usability Scale~\cite{brooke1996sus}, and Bangor et al.'s adjective bands for interpreting SUS scores~\cite{bangor2009sus}.
+
+\section{Research Gap}
+Table~\ref{tab:gap} positions representative work against the capabilities this project combines.
+
+\begin{table}[ht]
+	\centering
+	\caption{Capabilities of representative related work (\protect\cmark: yes, \protect\xmark: no).}
+	\label{tab:gap}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{lcccccc}
+			\toprule
+			                                   & \textbf{This work} & Dreaddit~\cite{turcan2019} & CLPsych~\cite{coppersmith2015} & eRisk~\cite{losada2016} & PhoBERT~\cite{nguyen2020phobert} & RAG~\cite{lewis2020rag} \\ \midrule
+			Vietnamese text                    & \cmark             & \xmark                     & \xmark                         & \xmark                  & \cmark                           & \xmark                  \\
+			Mental-health / stress target      & \cmark             & \cmark                     & \cmark                         & \cmark                  & \xmark                           & \xmark                  \\
+			Validated questionnaire scoring    & \cmark             & \xmark                     & \xmark                         & \xmark                  & \xmark                           & \xmark                  \\
+			Retrieval-grounded generation      & \cmark             & \xmark                     & \xmark                         & \xmark                  & \xmark                           & \cmark                  \\
+			Measured crisis / safety layer     & \cmark             & \xmark                     & \xmark                         & \xmark                  & \xmark                           & \xmark                  \\
+			Human-annotated real data          & \xmark             & \cmark                     & \cmark                         & \cmark                  & \cmark                           & \cmark                  \\ \bottomrule
+		\end{tabular}%
+	}
+\end{table}
+
+The literature therefore provides: validated stress instruments without a text modality; English detection systems trained on a public register that differs from private self-report; Vietnamese encoders without a mental-health corpus to fine-tune on; and a retrieval architecture whose safety benefit is widely assumed but seldom measured. No published work known to the author combines validated psychometric scoring, Vietnamese text classification and retrieval-grounded advice in one evaluated system for Vietnamese university students, or reports a quantitative evaluation of a Vietnamese crisis-detection layer. This work addresses that combination. The last row of Table~\ref{tab:gap} is its weakest point: it has no real, human-annotated data yet, which Chapter~\ref{ch:discussion} treats as the binding limitation.
+
+\section{Theoretical Background}
+
+\subsection{Psychometric scoring}
+\label{sec:theory-scoring}
+\subsubsection{DASS-21}
+Let $A=\{a_1,\dots,a_{21}\}$ with $a_i\in\{0,1,2,3\}$, and let $I_d, I_a, I_s$ be the seven item indices of the depression, anxiety and stress subscales. Each subscale score is doubled to stay comparable with the 42-item DASS~\cite{lovibond1995}:
+\begin{align}
+	S_k = 2\sum_{i\in I_k} a_i, \qquad k\in\{d,a,s\}. \label{eq:dass}
+\end{align}
+Each $S_k$ is mapped to a severity band using the cut-offs in Table~\ref{tab:dass-cutoffs}.
+
+\begin{table}[ht]
+	\centering
+	\caption[DASS-21 subscale items and severity cut-offs]{DASS-21 subscale items and severity cut-offs (applied to doubled scores)~\cite{lovibond1995}.}
+	\label{tab:dass-cutoffs}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{llccccc}
+			\toprule
+			Subscale   & Items                   & Normal & Mild  & Moderate & Severe & Extremely severe \\ \midrule
+			Depression & 3, 5, 10, 13, 16, 17, 21 & 0--9   & 10--13 & 14--20   & 21--27 & $\geq 28$        \\
+			Anxiety    & 2, 4, 7, 9, 15, 19, 20   & 0--7   & 8--9  & 10--14   & 15--19 & $\geq 20$        \\
+			Stress     & 1, 6, 8, 11, 12, 14, 18  & 0--14  & 15--18 & 19--25   & 26--33 & $\geq 34$        \\ \bottomrule
+		\end{tabular}%
+	}
+\end{table}
+
+\subsubsection{PSS-10}
+Let $R=\{r_1,\dots,r_{10}\}$ with $r_j\in\{0,\dots,4\}$ and $J=\{4,5,7,8\}$ the positively worded, reverse-scored items. Then
+\begin{align}
+	P = \sum_{j\notin J} r_j + \sum_{j\in J}(4-r_j), \qquad P\in[0,40], \label{eq:pss}
+\end{align}
+categorised as Low (0--13), Moderate (14--26) or High (27--40).
+
+\subsection{Transformer fine-tuning}
+PhoBERT-base is a 12-layer encoder (hidden size 768, 12 attention heads). For classification, a dense layer with $\tanh$ activation is applied to the first-token representation, followed by a linear projection to $C$ logits $z_{n,c}$. Training minimises class-weighted cross-entropy to counter label imbalance:
+\begin{align}
+	\mathcal{L} = -\frac{1}{N}\sum_{n=1}^{N} w_{y_n}\log\frac{\exp(z_{n,y_n})}{\sum_{c=1}^{C}\exp(z_{n,c})}, \qquad w_c=\frac{N}{C\cdot N_c}, \label{eq:loss}
+\end{align}
+where $N_c$ is the number of training examples in class $c$. Parameters are updated with AdamW, which decouples weight decay $\lambda$ from the adaptive step:
+\begin{align}
+	m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t, \qquad v_t = \beta_2 v_{t-1} + (1-\beta_2)g_t^2, \\
+	\vartheta_t &= \vartheta_{t-1} - \eta_t\left(\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon} + \lambda\vartheta_{t-1}\right), \qquad \hat m_t=\frac{m_t}{1-\beta_1^t},\ \hat v_t=\frac{v_t}{1-\beta_2^t}.
+\end{align}
+
+\subsection{Dense retrieval}
+A bi-encoder $f$ maps a query $q$ and each knowledge chunk $d$ to vectors, and chunks are ranked by cosine similarity
+\begin{align}
+	\mathrm{sim}(q,d) = \frac{f(q)\cdot f(d)}{\lVert f(q)\rVert\,\lVert f(d)\rVert}. \label{eq:cos}
+\end{align}
+The top-$k$ chunks are inserted into the LLM prompt. An approximate nearest-neighbour index (HNSW) makes the search sub-linear.
+
+\subsection{Evaluation metrics}
+\label{sec:metrics}
+\subsubsection{Classification}
+For per-class precision $P_c$ and recall $R_c$,
+\begin{align}
+	F1_c = \frac{2P_cR_c}{P_c+R_c}, \qquad \text{macro-F1} = \frac{1}{C}\sum_{c=1}^{C}F1_c. \label{eq:f1}
+\end{align}
+Macro-F1 is the primary metric because the labels are imbalanced and the minority class (Severe) is the most consequential. Chance-corrected agreement is reported as Cohen's $\kappa=(p_o-p_e)/(1-p_e)$, where $p_o$ is observed agreement and $p_e$ agreement expected from the marginals.
+
+\subsubsection{Retrieval}
+For a query with relevant set $G$ and ranked results $r_1, r_2, \dots$:
+\begin{align}
+	\text{Recall@}k &= \frac{|\{r_1,\dots,r_k\}\cap G|}{|G|}, \qquad
+	\text{MRR} = \frac{1}{|Q|}\sum_{q\in Q}\frac{1}{\mathrm{rank}_q}, \\
+	\text{nDCG@}k &= \frac{\sum_{i=1}^{k} \mathrm{rel}_i/\log_2(i+1)}{\sum_{i=1}^{\min(k,|G|)} 1/\log_2(i+1)},
+\end{align}
+where $\mathrm{rank}_q$ is the position of the first relevant chunk and $\mathrm{rel}_i\in\{0,1\}$.
+
+\subsubsection{Sampling uncertainty}
+For an accuracy estimate $\hat p$ on $n$ items, the 95\,\% Wilson interval half-width is bounded, in the worst case $\hat p=0.5$, by approximately $1.96\sqrt{0.25/n}$. At $n=40$ this is $\pm0.148$ (the ablation noise floor used in Section~\ref{sec:res-ablation}); at $n=70$ it is $\pm0.113$.

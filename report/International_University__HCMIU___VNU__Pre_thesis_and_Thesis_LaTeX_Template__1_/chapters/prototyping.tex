@@ -1,0 +1,73 @@
+This chapter presents the system architecture and explains the five design strategies that shaped it. Each strategy is described as a framework (what was built) and a purpose (why that choice, and what it costs).
+
+\section{System Architecture}
+The system is a three-tier application (Figure~\ref{fig:architecture}). The \textbf{presentation layer} is a seven-page Streamlit interface. The \textbf{API layer} is a FastAPI service exposing six endpoints with Pydantic-validated request and response schemas. The \textbf{service layer} contains five independent components - text analysis, psychometric scoring, crisis rule, retriever and LLM chain - over a \textbf{data layer} of three stores: a SQLite database, a ChromaDB vector store and the locally stored PhoBERT checkpoint and sentence embedder. The only external dependency is the LLM, reached through an OpenAI-compatible API; the deployed configuration uses \code{openai/gpt-oss-120b} served by Groq.
+
+\diagram{diagram_architecture.png}{1.0}{Layered system architecture.}{fig:architecture}
+
+Separating the interface from the backend across an HTTP boundary is deliberate. It lets the scoring and safety logic be tested without any user interface, and it lets the evaluation harness exercise exactly the production code path that a student's request takes. Table~\ref{tab:components} records why each technology was chosen.
+
+\begin{table}[ht]
+	\centering
+	\caption{Architectural components and the reason each was chosen.}
+	\label{tab:components}
+	\begin{tabularx}{\textwidth}{lL}
+		\toprule
+		Component & Rationale \\ \midrule
+		Streamlit & The interface is a linear multi-page form with charts; Streamlit's declarative model fits and needs no separate frontend build. \\
+		FastAPI + Pydantic v2 & Typed validation of every request and response, automatic OpenAPI documentation, and async support, which matters because the LLM call dominates latency. \\
+		SQLite + SQLAlchemy 2.0 & A single-machine deployment with small data volume; the schema is portable to PostgreSQL unchanged. \\
+		ChromaDB & A persistent local vector store with cosine HNSW search and no separate service to operate. \\
+		PhoBERT-base & The standard Vietnamese encoder~\cite{nguyen2020phobert}; runs locally on CPU, so text analysis needs no network. \\
+		MiniLM-L12 multilingual & A small multilingual sentence encoder~\cite{reimers2020multilingual}; retrieves equally for Vietnamese and English queries. \\
+		LangChain (LCEL) & A \code{prompt | llm | parser} chain with a Pydantic output parser; the provider is a configuration value, not code. \\ \bottomrule
+	\end{tabularx}
+\end{table}
+
+The order in which components run within a request is shown in Figure~\ref{fig:sequence}. Text analysis and scoring run first because they are pure functions with no side effects. The crisis gate runs next - it cannot run earlier, since it consumes the depression severity produced by scoring. Persistence, retrieval and generation run only after the gate has cleared.
+
+\diagram{diagram_sequence.png}{1.0}{Sequence of a full assessment request, including the crisis and degraded paths.}{fig:sequence}
+
+\section{Strategies Choice Purposes}
+Five strategies govern the design. Together they aim to make the safety-critical and headline-producing paths deterministic, and to confine the unpredictable components to roles where their failure is harmless.
+
+\subsection{Strategy 1: Deterministic core with graceful degradation}
+\subsubsection{Strategy 1 framework}
+The pipeline is layered so that each layer degrades independently. Psychometric scoring is pure arithmetic with no dependencies and always produces a result. The PhoBERT classifier is loaded lazily; if the checkpoint is missing, fails to load, or the input is not Vietnamese, text analysis falls back to the 210-term bilingual stress lexicon. Retrieval never raises: on an empty collection or any exception it returns an empty list. The LLM call is wrapped so that any failure - timeout, rate limit, malformed JSON - returns the deterministic results with a plain-language reason shown to the student.
+
+\subsubsection{Strategy 1 purpose}
+The components most likely to fail unpredictably (a network LLM, a large model load) are exactly the ones the system can proceed without. A student therefore never sees an error page instead of their questionnaire result, and a broken advice section never reads as a verdict about their results. The cost is that the degraded result is less informative, and the interface must say so explicitly.
+
+\subsection{Strategy 2: A pre-persistence, pre-generative crisis gate}
+\subsubsection{Strategy 2 framework}
+A deterministic crisis rule (Algorithm~\ref{alg:crisis}) runs before any database write and before any external call. When it fires, the response contains only a helpline message: the Ngay Mai youth helpline, the national 111 line, emergency number 115, and campus counselling, with an instruction not to stay alone. Retrieval and generation are never invoked, and the application log records the trigger reasons but never the text.
+
+The first version matched a flat list of fixed phrases. When it was found to miss most indirect ideation, it was rebuilt around six constructs from suicide-risk assessment (explicit intent, passive death wish, existence negation, perceived burdensomeness, preparation, escape) with span-local idiom guards. To avoid tuning on the test set, the procedure in Figure~\ref{fig:crisisproc} was followed: a new 60-item bilingual held-out set was written and frozen \textit{before} the patterns existed, the patterns were written from the construct list rather than from failing items, the first held-out measurement was reported, and only the older sets were used for debugging.
+
+\diagram{diagram_crisis_procedure.png}{0.8}{Procedure used to rebuild the crisis rule without tuning on the held-out set.}{fig:crisisproc}
+
+\subsubsection{Strategy 2 purpose}
+Placing a deterministic rule first means the safety-critical path contains no component that is non-reproducible, network-dependent or able to be talked out of its decision. Running it before persistence means the most sensitive disclosures in the system are precisely the ones that are never written to disk. The rule is tuned toward recall: a false positive shows helplines to a student who does not need them, while a false negative shows nothing to a student who does. The cost is that a pattern-based rule cannot understand every paraphrase; its remaining misses are reported verbatim in Appendix~\ref{app:crisis}.
+
+\subsection{Strategy 3: The validated instrument owns the headline}
+\subsubsection{Strategy 3 framework}
+Two estimates of stress level exist in a completed assessment: the instrument label $L_{\text{inst}}$ (Equation~\ref{eq:label}) and the LLM's predicted level. As Figure~\ref{fig:fusion} shows, $L_{\text{inst}}$ is the headline whenever a questionnaire was completed; the LLM's level is used only when no questionnaire exists, and any disagreement is stated to the student.
+
+\diagram{diagram_label_fusion.png}{0.75}{How the headline stress level is chosen and disagreement is surfaced.}{fig:fusion}
+
+\subsubsection{Strategy 3 purpose}
+An earlier revision displayed the LLM's level as the headline and used the questionnaire only as a fallback, letting an unvalidated generative estimate silently override a validated instrument. Reversing the precedence restricts the LLM to what it does well - explaining evidence and phrasing suggestions - and keeps the number a student sees traceable to a published scoring manual. The cost is that the headline cannot reflect nuance the student expressed only in text, which is why the divergence message exists.
+
+\subsection{Strategy 4: Retrieval grounding with verified citations}
+\subsubsection{Strategy 4 framework}
+Grounding is enforced at three layers. At the \textit{prompt} layer, an absolute rule forbids advice, services, phone numbers or clinical claims absent from the retrieved passages, and tells the model to state a gap rather than fill it. At the \textit{schema} layer, the output must cite chunk identifiers of the form \code{file.md::N}. At the \textit{service} layer, citations not present in the retrieved set are discarded before the response is returned, and if retrieval returns nothing the LLM is not called at all.
+
+\subsubsection{Strategy 4 purpose}
+A prompt instruction alone is not a guarantee, and an unverified citation is worse than none because it asserts a provenance the system cannot stand behind. Checking citations in code makes a fabricated source impossible to show to the student. What this does not establish is \textit{faithfulness} - whether a correctly cited passage actually supports the sentence citing it - which remains unmeasured (Section~\ref{sec:limitations}).
+
+\subsection{Strategy 5: Evaluation-first reproducibility}
+\subsubsection{Strategy 5 framework}
+Every reported figure is produced by a script that writes its own artefact to \code{data/eval/}. The data split is frozen and reused by every system; LLM responses are cached by a SHA-256 hash of the full input; the exact evaluated dataframe is written on every run; and a measurement that could not be made is written as an explicit \textit{not run} marker rather than omitted or estimated. The ablation uses the production engine with feature switches, not a copy.
+
+\subsubsection{Strategy 5 purpose}
+The split is frozen for a specific reason: PhoBERT was fine-tuned on its training portion, so redrawing it would leak former training items into the test set and inflate that model's score. Caching makes LLM evaluation free to repeat and exactly reproducible. The not-run markers exist because a missing measurement that looks like a zero is more misleading than an honest gap. This discipline is what exposed two defects later in the project - the retrieval query construction and the original crisis rule - which is its main practical justification.

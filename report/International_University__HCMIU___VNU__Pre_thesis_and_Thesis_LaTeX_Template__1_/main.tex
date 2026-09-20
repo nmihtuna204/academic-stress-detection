@@ -1,0 +1,305 @@
+%% PREAMBLE
+%% Compiler: pdfLaTeX (Overleaf default). Vietnamese quotations are wrapped in
+%% \vi{...}, which switches babel to Vietnamese (T5 font encoding).
+\documentclass[12pt, twoside]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5,T1]{fontenc}
+\usepackage[main=english,vietnamese]{babel}
+\usepackage{lmodern}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+
+%% \cmark for tick and \xmark for cross
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+
+\usepackage[a4paper, top=2.5cm, bottom=2cm, left=3cm, right=2cm, bindingoffset=5mm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{setspace}
+\onehalfspacing
+%% Let long code paths (\texttt) break and give paragraphs extra stretch,
+%% which removes most Overfull \hbox warnings without visible loosening.
+\usepackage[htt]{hyphenat}
+\setlength{\emergencystretch}{2em}
+\setlist{itemsep=2pt, topsep=4pt}
+\captionsetup{font=small, labelfont=bf}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+%% Python listings
+\lstdefinestyle{mystyle}{
+	basicstyle=\ttfamily\footnotesize,
+	breakatwhitespace=false,
+	breaklines=true,
+	captionpos=b,
+	frame=single,
+	keepspaces=true,
+	numbers=left,
+	numbersep=5pt,
+	numberstyle=\tiny\color{black},
+	showstringspaces=false,
+	keywordstyle=\color{blue}\bfseries,
+	commentstyle=\color{gray}\itshape,
+	stringstyle=\color{teal},
+	columns=fullflexible,
+	upquote=true,
+	literate={—}{{---}}1 {–}{{--}}1 {→}{{$\rightarrow$}}1 {≥}{{$\geq$}}1,
+}
+\lstset{style=mystyle}
+
+%% Customize chapter titles
+\titleformat{\chapter}[display]
+  {\Huge\bfseries\centering}{\chaptername~\thechapter}
+  {0pt}
+  {\Huge}
+\titlespacing*{\chapter}
+  {0pt}
+  {*0}
+  {1em}
+
+%% Fix appendix labeling
+\makeatletter
+\newcommand\AppendixName{Appendix}
+\let\oldappendix\appendix
+\renewcommand{\appendix}{%
+  \oldappendix
+  \renewcommand{\chaptername}{\AppendixName}  \renewcommand{\thechapter}{\@Alph\c@chapter}}
+\makeatother
+\addto\captionsenglish{\renewcommand*\contentsname{Table of Contents}}
+\addto{\extrasenglish}{%
+  \renewcommand{\bibname}{References}
+}
+\renewcommand\lstlistlistingname{List of Listings}
+
+%% All figure files live in images/
+\graphicspath{{images/}}
+
+%% ---------------------------------------------------------------------------
+%% Project macros
+%% ---------------------------------------------------------------------------
+%% Vietnamese inline text (switches hyphenation and font encoding).
+\newcommand{\vi}[1]{\foreignlanguage{vietnamese}{#1}}
+%% Code identifiers.
+\newcommand{\code}[1]{\texttt{#1}}
+
+%% \diagram{file}{width}{caption}{label}
+%% Includes images/<file> when it exists; otherwise draws a framed placeholder
+%% so the report still compiles before the Mermaid diagrams are exported
+%% (see report/REPORT_DIAGRAMS.md).
+\newcommand{\diagram}[4]{%
+	\begin{figure}[htbp]
+		\centering
+		\IfFileExists{images/#1}{%
+			\includegraphics[width=#2\linewidth,height=0.7\textheight,keepaspectratio]{#1}%
+		}{%
+			\fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering\large\ttfamily
+				Insert diagram: images/\detokenize{#1}\\[4pt]
+				\normalsize (Mermaid source in report/REPORT\_DIAGRAMS.md)}}%
+		}
+		\caption{#3}
+		\label{#4}
+	\end{figure}%
+}
+
+
+%% \screenshot{file}{width}{caption}{label}: same idea as \diagram, for UI captures.
+\newcommand{\screenshot}[4]{%
+	\begin{figure}[htbp]
+		\centering
+		\IfFileExists{images/#1}{%
+			\fbox{\includegraphics[width=#2\linewidth,height=0.6\textheight,keepaspectratio]{#1}}%
+		}{%
+			\fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering\large\ttfamily
+				Insert screenshot: images/\detokenize{#1}}}%
+		}
+		\caption{#3}
+		\label{#4}
+	\end{figure}%
+}
+
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+	pdftitle={An LLM-Powered Application for Detecting Academic Stress Levels in Vietnamese University Students},
+	pdfauthor={Nguyen Minh Tuan (ITCSIU22298)},
+	pdfsubject={Pre-thesis, School of Computer Science and Engineering, International University - VNU-HCM},
+}
+
+\begin{document}
+\pagenumbering{roman}
+
+\newgeometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+%% Title page
+\begin{titlepage}
+
+	\begin{tikzpicture}[remember picture,overlay,inner sep=0,outer sep=0]
+     %% Frame corners, measured from the physical page.
+     \coordinate (NW) at ([xshift=1.5cm,yshift=-2cm]current page.north west);
+     \coordinate (SE) at ([xshift=-1.5cm,yshift=2cm]current page.south east);
+     %% Thick blue frame.
+     \draw[blue!70!black,line width=4pt] (NW) rectangle (SE);
+     %% Thin crossing frames at 0.5cm and 0.3cm: one inset horizontally and outset
+     %% vertically, the other the reverse, which forms the corner squares.
+     %% (Replaces the template's chained path, whose D-to-A segment had a sign
+     %% typo and drew a stray diagonal line down the right-hand side.)
+     \foreach \d in {0.5cm,0.3cm} {
+       \draw ([xshift=\d,yshift=\d]NW) rectangle ([xshift=-\d,yshift=-\d]SE);
+       \draw ([xshift=-\d,yshift=-\d]NW) rectangle ([xshift=\d,yshift=\d]SE);
+     }
+
+   \end{tikzpicture}
+
+	\centering
+	\textbf{VIETNAM NATIONAL UNIVERSITY HO CHI MINH CITY}\par \textbf{THE
+		INTERNATIONAL UNIVERSITY}\par \textbf{SCHOOL OF COMPUTER SCIENCE AND ENGINEERING}\par
+
+	\vspace{1.5cm}
+	\includegraphics[width=0.25\textwidth]{IU.png}
+
+	\vspace{1cm}
+	{\large\textbf{AN LLM-POWERED APPLICATION FOR DETECTING ACADEMIC STRESS LEVELS IN VIETNAMESE UNIVERSITY STUDENTS}}
+
+	\vspace{1cm}
+	By \par \textbf{NGUYEN MINH TUAN}\par Student ID: ITCSIU22298
+
+	\vspace{1cm}
+	Supervisor: \textbf{Dr.~Ho Long Van}
+
+	\vspace{1.5cm}
+	\textit{A pre-thesis submitted to the School of Computer Science and Engineering \\ in partial
+		fulfillment of the requirements for the degree of \\ Bachelor of Engineering in Computer Science}
+
+	\vspace{1.5cm}
+	\text{Ho Chi Minh City, Vietnam} \par September 2026
+
+	\newpage
+
+	%% Signature page
+	\centering
+
+	{\large\textbf{AN LLM-POWERED APPLICATION FOR DETECTING ACADEMIC STRESS LEVELS IN VIETNAMESE UNIVERSITY STUDENTS}}\par
+	\vspace{3cm}
+
+	\hspace{7cm}
+	\makebox[7cm][l]{\text{APPROVED BY:}}
+	\par
+	\vspace{2cm}
+
+	\hspace{7cm}
+	\makebox[7cm][l]{\underline{\hspace{7cm}}}
+	\par \hspace{7cm}
+	\makebox[7cm][l]{\textit{Dr.~Ho Long Van, Supervisor}}
+	\par
+	\vspace{2cm}
+
+	\hspace{7cm}
+	\makebox[7cm][l]{\underline{\hspace{7cm}}}
+	\par \hspace{7cm}
+	\makebox[7cm][l]{\textit{[Committee member]}}
+	\par
+	\vspace{2cm}
+
+	\hspace{7cm}
+	\makebox[7cm][l]{\underline{\hspace{7cm}}}
+	\par \hspace{7cm}
+	\makebox[7cm][l]{\textit{[Committee member]}}
+	\par
+	\vspace{2cm}
+
+	\hspace{7cm}
+	\makebox[7cm][l]{\underline{\hspace{7cm}}}
+	\par \hspace{7cm}
+	\makebox[7cm][l]{\textit{[Committee member]}}
+	\par
+	\vspace{0.75cm}
+
+	\hspace{7cm}
+	\makebox[7cm][r]{\text{THESIS COMMITTEE}}
+	\par
+	\thispagestyle{empty}
+\end{titlepage}
+\restoregeometry
+
+%% Acknowledgments
+\chapter*{Acknowledgments}
+I would like to express my sincere gratitude to my supervisor, Dr.~Ho Long Van, for the guidance, critical questions and encouragement given throughout this pre-thesis. I also thank the School of Computer Science and Engineering, International University --- Vietnam National University Ho Chi Minh City, for the knowledge and resources that made this work possible.
+
+Finally, I thank my family and friends for their patience and support during the months spent building and evaluating this system.
+\thispagestyle{empty}
+
+%% Table of Contents, List of Figures, List of Tables
+\tableofcontents
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\listofalgorithms
+\addcontentsline{toc}{chapter}{List of Algorithms}
+\lstlistoflistings
+\addcontentsline{toc}{chapter}{List of Listings}
+
+%% Abstract
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+Academic stress is a persistent concern among Vietnamese university students, yet help-seeking remains low and counselling capacity is limited. This pre-thesis presents the design, implementation and preliminary evaluation of a web application that estimates a student's academic stress level from free text and two validated psychometric instruments, and returns coping suggestions grounded in a curated knowledge base. The system combines deterministic scoring of the DASS-21 and PSS-10, a PhoBERT classifier fine-tuned for Vietnamese stress classification, and a retrieval-augmented large language model (LLM) that writes an explanation and three actionable suggestions with verified citations. A deterministic crisis-detection gate runs before any data is stored and before any LLM call; when it fires, the assessment is replaced by mental-health helpline information and nothing the student wrote is persisted.
+
+Six systems were compared on one frozen, stratified 70-item test split in a unified four-class label space. TF-IDF with logistic regression reached accuracy 0.686 and macro-F1 0.682; fine-tuned PhoBERT 0.657 and 0.533; zero-shot LLM prompting 0.529 and 0.524; and the full proposed pipeline 0.486 and 0.500. An ablation shows that removing the questionnaire scores collapses the pipeline to the majority-class floor (macro-F1 0.123), so its agreement with the questionnaire-derived label is largely circular. Retrieval quality over a 57-query labelled set gave MRR 0.787 and Recall@5 0.903, and a paired comparison exposed a defect in the deployed query construction; rewriting it raised MRR on the affected queries from 0.509 to 0.839. The crisis rule was rebuilt around six constructs from suicide-risk assessment and measured on a 60-item bilingual set frozen before the patterns were written: precision rose from 0.600 to 1.000 and recall from 0.200 to 0.867, with no false positives on twenty lethal-sounding idioms. The principal limitation is the data: every classification figure was computed on text generated from 41 Vietnamese sentence templates, and 34 of 70 test items are more than 0.80 similar to a training item. These figures therefore demonstrate the pipeline rather than real-world stress detection. Infrastructure for a consented real-data study is implemented but has not yet been run. The system screens and estimates; it does not diagnose.
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} academic stress, Vietnamese NLP, PhoBERT, retrieval-augmented generation, DASS-21, PSS-10, crisis detection, mental-health screening
+
+%% Chapters
+\chapter{INTRODUCTION}\label{ch:intro}
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\input{chapters/introduction}
+
+\chapter{RELATED WORK}\label{ch:work}
+\input{chapters/work}
+
+\chapter{METHODOLOGY}\label{ch:method}
+\input{chapters/methodology}
+
+\chapter{PROTOTYPING}\label{ch:proto}
+\input{chapters/prototyping}
+
+\chapter{IMPLEMENTATION}\label{ch:impl}
+\input{chapters/implementation}
+
+\chapter{RESULTS}\label{ch:result}
+\input{chapters/result}
+
+\chapter{DISCUSSION}\label{ch:discussion}
+\input{chapters/discussion}
+
+\chapter{CONCLUSION}\label{ch:conclusion}
+\input{chapters/conclusion}
+
+\bibliographystyle{ieeetr}
+\bibliography{bibliography.bib}
+
+\appendix
+\input{chapters/appendix}
+\end{document}
