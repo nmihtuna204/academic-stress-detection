@@ -170,14 +170,48 @@ class TestQueryConstruction:
         assert "student with" not in produced
         assert produced == "I cannot sleep before exams"
 
-    def test_questionnaire_only_still_uses_the_label(self):
-        """No free text is unmeasured territory, so that branch is unchanged."""
+    def test_questionnaire_only_asks_for_coping_not_for_the_label(self):
+        """The label query retrieved the same descriptive passages at every level."""
         from app.api.services import build_rag_query
         from app.schemas.enums import StressLevel
         from app.schemas.models import QuestionnaireResult
 
         questionnaire = QuestionnaireResult(ground_truth_label=StressLevel.HIGH)
-        assert build_rag_query(None, None, questionnaire) == "student with High stress"
+        produced = build_rag_query(None, None, questionnaire)
+        assert "student with" not in produced
+        assert produced.startswith("Practical coping strategies")
+
+    @pytest.mark.parametrize(
+        ("dep", "anx", "st", "expected", "absent"),
+        [
+            ("Severe", "Normal", "Normal", "social support", "breathing"),
+            ("Normal", "Moderate", "Mild", "breathing", "social support"),
+            ("Normal", "Normal", "Extremely Severe", "study time", "breathing"),
+        ],
+    )
+    def test_questionnaire_query_follows_the_elevated_subscales(self, dep, anx, st, expected, absent):
+        from app.api.services import questionnaire_query
+        from app.schemas.enums import StressLevel
+        from app.schemas.models import Dass21Scores, QuestionnaireResult
+
+        q = QuestionnaireResult(
+            dass21=Dass21Scores(
+                depression_score=0, anxiety_score=0, stress_score=0, depression_level=dep,
+                anxiety_level=anx, stress_level_dass=st, overall_severity=st,
+            ),
+            ground_truth_label=StressLevel.HIGH,
+        )
+        produced = questionnaire_query(q)
+        assert expected in produced
+        assert absent not in produced
+
+    def test_pss_only_asks_for_every_coping_group(self):
+        from app.api.services import _SUBSCALE_TOPICS, questionnaire_query
+        from app.schemas.enums import StressLevel
+        from app.schemas.models import QuestionnaireResult
+
+        produced = questionnaire_query(QuestionnaireResult(ground_truth_label=StressLevel.LOW))
+        assert all(topic in produced for topic in _SUBSCALE_TOPICS.values())
 
     def test_no_signal_at_all_falls_back_to_a_generic_query(self):
         from app.api.services import build_rag_query
@@ -288,3 +322,32 @@ class TestEvaluateWiring:
         report = retrieval_eval.format_report(retrieval_eval.evaluate(queries, ks=(1,)))
         assert "a missed question" in report
         assert "#7" in report
+
+
+class TestThresholdAnalysis:
+    """A cut-off must be judged by what it empties, not only by what it removes."""
+
+    def test_counts_removed_passages_and_emptied_queries(self, monkeypatch):
+        import app.eval.retrieval_eval as re_mod
+        from app.eval.retrieval_eval import Query, threshold_analysis
+        from app.rag.retriever import RetrievedDoc
+
+        def doc(chunk_id, distance):
+            return RetrievedDoc(text="", source="", heading="", distance=distance, chunk_id=chunk_id)
+
+        results = {
+            "q1": [doc("a", 0.2), doc("x", 0.7)],  # relevant close, irrelevant far
+            "q2": [doc("y", 0.6), doc("b", 0.65)],  # everything far
+        }
+        monkeypatch.setattr(re_mod, "as_production_query", lambda text: text)
+        monkeypatch.setattr(re_mod, "retrieve", lambda query, k=4: results[query])
+        queries = [
+            Query(id=1, query="q1", relevant={"a"}, style="natural", lang="en"),
+            Query(id=2, query="q2", relevant={"b"}, style="natural", lang="en"),
+        ]
+
+        row = next(r for r in threshold_analysis(queries, thresholds=(0.5,))["rows"])
+        assert row["irrelevant_removed"] == pytest.approx(1.0)
+        assert row["relevant_removed"] == pytest.approx(0.5)
+        assert row["queries_emptied"] == 1
+        assert row["queries_losing_all_relevant"] == 1

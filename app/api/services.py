@@ -15,7 +15,7 @@ from app.db.models import Prediction, QuestionnaireResponse, StressContext, Text
 from app.llm.chain import assess as llm_assess
 from app.llm.safety import check_crisis
 from app.nlp.emotion import analyze
-from app.rag.retriever import RetrievedDoc, retrieve
+from app.rag.retriever import RetrievedDoc, fetch_chunks, retrieve
 from app.schemas.enums import StressLevel
 from app.schemas.models import (
     AssessmentResponse,
@@ -191,8 +191,11 @@ def build_rag_query(
     costing the best arm 0.15 MRR: it is semantic noise that pulls a dense
     embedding away from the topic, so it is no longer appended to a text query.
 
-    The no-free-text branch is unchanged, because the query set is all
-    text-derived and provides no evidence about it.
+    With no free text, the query asks for coping strategies matched to the
+    elevated DASS subscales (`questionnaire_query`). The previous
+    "student with <label> stress" retrieved the same four descriptive passages
+    for every level - what stress is, its signs - which rule 4 then left nothing
+    actionable to advise from; `retrieval_eval` measures the difference.
     """
     text = raw_text.strip()[:300] if raw_text and raw_text.strip() else ""
     if text:
@@ -200,8 +203,89 @@ def build_rag_query(
         return f"{text} {keywords}".strip()
 
     if questionnaire:
-        return f"student with {questionnaire.ground_truth_label.value} stress"
+        return questionnaire_query(questionnaire)
     return "coping strategies for academic stress in university students"
+
+
+# Coping topic per DASS subscale, phrased like the knowledge-base section it
+# should reach (02_coping_strategies.md, groups 1-4).
+_SUBSCALE_TOPICS = {
+    "stress": "managing study time and deadlines, taking breaks",
+    "anxiety": "regulating emotions, breathing and relaxation when worried",
+    "depression": "connection and social support, talking to someone you trust",
+}
+_NOT_ELEVATED = {"Normal", "Mild"}
+
+
+def questionnaire_query(questionnaire: QuestionnaireResult) -> str:
+    """Retrieval query for a questionnaire-only submission: what to DO, not what stress is."""
+    topics: list[str] = []
+    if questionnaire.dass21 is not None:
+        levels = {
+            "stress": questionnaire.dass21.stress_level_dass,
+            "anxiety": questionnaire.dass21.anxiety_level,
+            "depression": questionnaire.dass21.depression_level,
+        }
+        topics = [
+            _SUBSCALE_TOPICS[name]
+            for name, level in levels.items()
+            if getattr(level, "value", level) not in _NOT_ELEVATED
+        ]
+    if not topics:  # PSS only, or nothing elevated: the general coping groups
+        topics = list(_SUBSCALE_TOPICS.values())
+    return "Practical coping strategies for a university student: " + "; ".join(topics)
+
+
+# Help-seeking passages that are always in context for a student screened as
+# needing them: "When should you seek professional support?" and "University
+# counselling offices". Measured 2026-09-19: the ranked top 4 contained neither
+# these nor any other support-resource passage for 0 of 70 test items - including
+# all 9 Severe ones - and 3 of 121 generated suggestions mentioned professional
+# help at all. Prompt rule 4 forbids advice absent from the passages, so without
+# this the pipeline could not ground a referral for the students who need one
+# most, and rule 6 (encourage professional support) could not be obeyed.
+SUPPORT_CHUNK_IDS: tuple[str, ...] = (
+    "01_academic_stress.md::3",
+    "03_support_resources_vietnam.md::1",
+)
+_ELEVATED_DASS = frozenset({"Severe", "Extremely Severe"})
+
+
+def needs_support_material(dass_result: dict | None, pss_result: dict | None) -> bool:
+    """True for a High/Severe screening result or severe DASS depression/anxiety."""
+    if dass_result and (
+        dass_result["depression"]["severity"] in _ELEVATED_DASS
+        or dass_result["anxiety"]["severity"] in _ELEVATED_DASS
+    ):
+        return True
+    if not dass_result and not pss_result:
+        return False
+    label = derive_ground_truth(
+        dass_stress_severity=dass_result["stress"]["severity"] if dass_result else None,
+        pss_category=pss_result["category"] if pss_result else None,
+    )
+    return label in ("High", "Severe")
+
+
+def retrieve_for_assessment(
+    raw_text: str | None,
+    emotion: EmotionResult | None,
+    questionnaire: QuestionnaireResult | None,
+    dass_result: dict | None,
+    pss_result: dict | None,
+    k: int = 4,
+) -> list[RetrievedDoc]:
+    """The passages the generator sees: the ranked top k, plus pinned support material.
+
+    Shared by the service and the evaluation harness, so what is evaluated is
+    what is deployed. Pinned passages are appended, never substituted, so the
+    ranked results are unchanged.
+    """
+    docs = retrieve(build_rag_query(raw_text, emotion, questionnaire), k=k)
+    if needs_support_material(dass_result, pss_result):
+        present = {d.chunk_id for d in docs}
+        docs += fetch_chunks([cid for cid in SUPPORT_CHUNK_IDS if cid not in present])
+    return docs
 
 
 async def run_full_assessment(
@@ -255,7 +339,7 @@ async def run_full_assessment(
         save_stress_context(session, user.student_id, request.stress_context)
 
     # 5. RAG retrieval.
-    docs: list[RetrievedDoc] = retrieve(build_rag_query(request.raw_text, emotion, questionnaire), k=4)
+    docs = retrieve_for_assessment(request.raw_text, emotion, questionnaire, dass_result, pss_result)
 
     # 6. LLM assessment (skipped gracefully if unavailable/misconfigured).
     #
@@ -309,6 +393,14 @@ async def run_full_assessment(
             logger.warning("Discarded citations not present in retrieved context: %s", dropped)
         assessment.citations = kept
         cited_sources = [f"{by_id[c].source} — {by_id[c].heading}" for c in kept]
+        # Material was retrieved but the model judged none of it applicable, and
+        # rule 4 stopped it filling the gap. That is a refusal, not a fault.
+        if not assessment.suggestions:
+            advice_unavailable_reason = (
+                "The reference material available did not cover your situation closely "
+                "enough, so no suggestions were generated rather than guessing. Your "
+                "questionnaire results below are unaffected."
+            )
 
     # 7. Persist the prediction row (evaluation data).
     prediction = Prediction(

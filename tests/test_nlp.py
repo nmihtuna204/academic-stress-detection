@@ -38,6 +38,28 @@ class TestLexicon:
     def test_clean_text_no_matches(self):
         assert find_stress_keywords("The weather is lovely today, I went out with friends.") == []
 
+    def test_keyword_order_does_not_depend_on_the_hash_seed(self):
+        """The order feeds the RAG query, so it must be identical in every process.
+
+        Sorting a set by length alone left equal-length keywords in hash order,
+        and the same sentence retrieved different passages in different runs.
+        """
+        import subprocess
+        import sys
+
+        from tests.conftest import REPO_ROOT
+
+        probe = "from app.nlp.lexicon import ALL_KEYWORDS; print('|'.join(ALL_KEYWORDS))"
+        orders = {
+            subprocess.run(
+                [sys.executable, "-c", probe],
+                capture_output=True, text=True, encoding="utf-8", check=True, cwd=REPO_ROOT,
+                env={**__import__("os").environ, "PYTHONHASHSEED": seed, "PYTHONIOENCODING": "utf-8"},
+            ).stdout
+            for seed in ("1", "2", "3")
+        }
+        assert len(orders) == 1
+
     def test_still_finds_vietnamese_keywords(self):
         """Vietnamese entries are retained, so Vietnamese input still matches."""
         text = "Dạo này mình rất áp lực vì deadline dồn dập, đêm nào cũng mất ngủ."

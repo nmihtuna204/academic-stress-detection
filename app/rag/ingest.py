@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import get_settings
-from app.rag.store import get_collection
+from app.rag.store import embedding_model_name, get_collection
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +97,13 @@ def ingest(knowledge_dir: str | Path | None = None) -> int:
         return 0
 
     collection = get_collection()
+    model = embedding_model_name()
     collection.upsert(
         ids=[c.chunk_id for c in chunks],
         documents=[c.text for c in chunks],
-        metadatas=[{"source": c.source, "heading": c.heading} for c in chunks],
+        # The model stamp lets the retriever refuse queries embedded by a
+        # different model, which would otherwise fail silently.
+        metadatas=[{"source": c.source, "heading": c.heading, "embedding_model": model} for c in chunks],
     )
     logger.info("Ingested %d chunks into collection %r", len(chunks), collection.name)
     return len(chunks)

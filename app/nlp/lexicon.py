@@ -105,10 +105,15 @@ STRESS_LEXICON: dict[str, list[str]] = {
 }
 
 # Flattened, longest-first so longer phrases match before their substrings.
+# Longest first, then alphabetical. The tiebreak is load-bearing: the source is a
+# set, whose iteration order changes with PYTHONHASHSEED on every interpreter
+# start, so sorting on length alone left equal-length keywords in a random order.
+# That order becomes the order of `stress_keywords`, which build_rag_query appends
+# to the retrieval query - measured 2026-09-19, 7 of 40 evaluation items then
+# retrieved a different top-4 depending on which process ran them.
 ALL_KEYWORDS: list[str] = sorted(
     {kw for group in STRESS_LEXICON.values() for kw in group},
-    key=len,
-    reverse=True,
+    key=lambda kw: (-len(kw), kw),
 )
 
 # High-risk phrases that trigger the crisis rule regardless of model output.

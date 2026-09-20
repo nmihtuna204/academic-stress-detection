@@ -15,10 +15,12 @@ from app.rag.retriever import RetrievedDoc, retrieve
 class FakeCollection:
     """Minimal stand-in for a Chroma collection."""
 
-    def __init__(self, docs: list[tuple[str, str, str, float]], raise_on_query: bool = False):
+    def __init__(self, docs: list[tuple[str, str, str, float]], raise_on_query: bool = False,
+                 stamp: str | None = "test-model"):
         # docs: list of (text, source, heading, distance)
         self._docs = docs
         self._raise = raise_on_query
+        self._stamp = stamp
         self.last_n_results: int | None = None
 
     def count(self) -> int:
@@ -31,9 +33,19 @@ class FakeCollection:
         chosen = self._docs[:n_results]
         return {
             "documents": [[d[0] for d in chosen]],
-            "metadatas": [[{"source": d[1], "heading": d[2]} for d in chosen]],
+            "metadatas": [[
+                {"source": d[1], "heading": d[2]}
+                | ({"embedding_model": self._stamp} if self._stamp else {})
+                for d in chosen
+            ]],
             "distances": [[d[3] for d in chosen]],
         }
+
+
+@pytest.fixture(autouse=True)
+def _query_model(monkeypatch):
+    """Queries in these tests are 'embedded' by test-model; no real model loads."""
+    monkeypatch.setattr("app.rag.retriever.embedding_model_name", lambda: "test-model")
 
 
 @pytest.fixture()
@@ -103,3 +115,23 @@ class TestRetrieveEdgeCases:
 
         monkeypatch.setattr("app.rag.retriever.get_collection", _boom)
         assert retrieve("stress") == []
+
+
+class TestEmbeddingModelMismatch:
+    """Both candidate models emit 384-d vectors, so a mismatch fails silently.
+
+    Retrieval must refuse instead: an empty result makes the service withhold
+    advice, where a wrong one would ground advice in unrelated passages.
+    """
+
+    def test_chunks_from_another_model_are_refused(self, patch_collection):
+        patch_collection(FakeCollection(SAMPLE_DOCS, stamp="chroma-default-all-MiniLM-L6-v2"))
+        assert retrieve("stress") == []
+
+    def test_chunks_from_the_same_model_are_returned(self, patch_collection):
+        patch_collection(FakeCollection(SAMPLE_DOCS, stamp="test-model"))
+        assert len(retrieve("stress")) == 4
+
+    def test_unstamped_legacy_chunks_are_still_served(self, patch_collection):
+        patch_collection(FakeCollection(SAMPLE_DOCS, stamp=None))
+        assert len(retrieve("stress")) == 4

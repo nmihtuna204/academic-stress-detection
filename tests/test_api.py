@@ -45,6 +45,7 @@ def client(tmp_db, monkeypatch):
     monkeypatch.setattr(main, "analyze", lambda text: FAKE_EMOTION)
     monkeypatch.setattr(services, "analyze", lambda text: FAKE_EMOTION)
     monkeypatch.setattr(services, "retrieve", lambda query, k=4: [FAKE_DOC])
+    monkeypatch.setattr(services, "fetch_chunks", lambda ids: [])
     monkeypatch.setattr(services, "llm_assess", fake_llm_assess)
     with TestClient(main.app) as test_client:
         yield test_client
@@ -237,6 +238,26 @@ class TestGrounding:
         # Deterministic scoring is unaffected by the refusal.
         assert body["questionnaire"]["dass21"]["depression_score"] == 14
 
+    def test_declining_to_advise_is_explained_to_the_student(self, client, monkeypatch):
+        """Retrieved material that covers nothing yields an empty list, said aloud.
+
+        Rule 4 lets the model return no suggestions rather than invent some. The
+        page must then say advice was withheld, not render an empty section.
+        """
+        from app.api import services
+
+        declined = FAKE_ASSESSMENT.model_copy(update={"suggestions": [], "citations": []})
+
+        async def declines(**kwargs):
+            return declined
+
+        monkeypatch.setattr(services, "llm_assess", declines)
+        body = client.post("/assess/full", json={"dass21": full_dass(1)}).json()
+
+        assert body["assessment"]["suggestions"] == []
+        assert body["assessment"]["predicted_level"] == "High"
+        assert body["advice_unavailable_reason"]
+
     def test_valid_citations_are_resolved_to_readable_sources(self, client):
         response = client.post("/assess/full", json={"dass21": full_dass(1)})
         body = response.json()
@@ -368,3 +389,92 @@ class TestDeleteSession:
         student_id = created.json()["student_id"]
         assert client.delete(f"/session/{student_id}").status_code == 200
         assert client.delete(f"/session/{student_id}").status_code == 404
+
+
+class TestSupportMaterialPinning:
+    """Students screened High/Severe must have help-seeking material in context.
+
+    Rule 4 forbids advice absent from the passages, and the ranked top 4 held no
+    support-resource passage for any of 70 test items, so a referral to
+    professional help could never be grounded without this.
+    """
+
+    PINNED = [
+        RetrievedDoc(text="When to seek help.", source="01.md", heading="Seek help",
+                     distance=float("nan"), chunk_id="01_academic_stress.md::3", pinned=True),
+        RetrievedDoc(text="Counselling offices.", source="03.md", heading="Counselling",
+                     distance=float("nan"), chunk_id="03_support_resources_vietnam.md::1", pinned=True),
+    ]
+
+    @pytest.fixture()
+    def seen(self, client, monkeypatch):
+        from app.api import services
+
+        captured: dict = {"fetched": None, "docs": None}
+
+        def fake_fetch(ids):
+            captured["fetched"] = list(ids)
+            return [d for d in self.PINNED if d.chunk_id in ids]
+
+        async def capture(**kwargs):
+            captured["docs"] = kwargs["retrieved_docs"]
+            return FAKE_ASSESSMENT
+
+        monkeypatch.setattr(services, "fetch_chunks", fake_fetch)
+        monkeypatch.setattr(services, "llm_assess", capture)
+        return captured
+
+    @staticmethod
+    def severe_stress_dass() -> dict:
+        """Stress subscale maximal, every other item 0: Severe label, no crisis items."""
+        stress_items = {1, 6, 8, 11, 12, 14, 18}
+        return {"answers": {str(i): 3 if i in stress_items else 0 for i in range(1, 22)}}
+
+    def test_high_screening_puts_support_passages_in_context(self, client, seen):
+        body = client.post("/assess/full", json={"dass21": self.severe_stress_dass()}).json()
+        assert body["questionnaire"]["ground_truth_label"] == "Severe"
+        ids = [d.chunk_id for d in seen["docs"]]
+        assert ids[0] == "01.md::0", "ranked results come first and are unchanged"
+        assert "01_academic_stress.md::3" in ids
+        assert "03_support_resources_vietnam.md::1" in ids
+
+    def test_low_screening_is_left_alone(self, client, seen):
+        client.post("/assess/full", json={"dass21": full_dass(0), "pss10": full_pss(0)})
+        assert seen["fetched"] is None
+        assert [d.chunk_id for d in seen["docs"]] == ["01.md::0"]
+
+    def test_a_support_passage_already_ranked_is_not_duplicated(self, client, seen, monkeypatch):
+        from app.api import services
+
+        ranked = [self.PINNED[0]]
+        monkeypatch.setattr(services, "retrieve", lambda query, k=4: ranked)
+        client.post("/assess/full", json={"dass21": self.severe_stress_dass()})
+        assert seen["fetched"] == ["03_support_resources_vietnam.md::1"]
+
+    @pytest.mark.parametrize(
+        ("dass_depression", "dass_anxiety", "dass_stress", "pss", "expected"),
+        [
+            ("Normal", "Normal", "Normal", "Low", False),
+            ("Severe", "Normal", "Normal", "Low", True),  # severe depression alone
+            ("Normal", "Extremely Severe", "Normal", "Low", True),  # severe anxiety alone
+            ("Normal", "Normal", "Severe", "Low", True),  # stress maps to High
+            ("Moderate", "Moderate", "Mild", "Moderate", False),
+        ],
+    )
+    def test_trigger_rule(self, dass_depression, dass_anxiety, dass_stress, pss, expected):
+        from app.api.services import needs_support_material
+
+        dass = {
+            "depression": {"severity": dass_depression},
+            "anxiety": {"severity": dass_anxiety},
+            "stress": {"severity": dass_stress},
+        }
+        assert needs_support_material(dass, {"category": pss}) is expected
+
+    def test_pinned_ids_exist_in_the_knowledge_base(self):
+        """Chunk ids derive from file names; a rename would silently unpin them."""
+        from app.api.services import SUPPORT_CHUNK_IDS
+        from app.rag.ingest import load_knowledge_chunks
+
+        ids = {c.chunk_id for c in load_knowledge_chunks()}
+        assert set(SUPPORT_CHUNK_IDS) <= ids

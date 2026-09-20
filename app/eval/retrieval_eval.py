@@ -410,6 +410,182 @@ def format_comparison(comparison: dict) -> str:
     return "\n".join(lines)
 
 
+# Passages a suggestion can be grounded in: the four coping groups and the
+# sleep-hygiene tips. The others describe stress or the scales, which explains
+# a result but gives rule 4 nothing to recommend.
+ACTIONABLE_CHUNKS = frozenset({
+    "02_coping_strategies.md::0",
+    "02_coping_strategies.md::1",
+    "02_coping_strategies.md::2",
+    "02_coping_strategies.md::3",
+    "04_sleep_and_study.md::2",
+})
+# The coping group that answers each elevated DASS subscale.
+SUBSCALE_CHUNK = {
+    "stress": "02_coping_strategies.md::0",
+    "anxiety": "02_coping_strategies.md::2",
+    "depression": "02_coping_strategies.md::3",
+}
+
+
+def questionnaire_branch_eval() -> dict:
+    """Old vs current query for submissions with no free text.
+
+    The query set above is all text-derived, so this branch needs its own
+    measure. Every combination of the three DASS subscales at Normal, Moderate
+    and Severe (27 profiles) is sent through both constructions. Two questions:
+    how much of the top k can ground a suggestion at all, and does the coping
+    group matching each elevated subscale reach the top k. The relevance sets are
+    defined by section headings, so this checks topical routing, not quality.
+    """
+    import itertools
+
+    from app.api.services import questionnaire_query
+    from app.schemas.models import Dass21Scores, QuestionnaireResult
+    from app.scoring import derive_ground_truth
+
+    arms: dict[str, dict] = {
+        "old": {"actionable": [], "matched": [], "sets": set()},
+        "current": {"actionable": [], "matched": [], "sets": set()},
+    }
+    levels = ("Normal", "Moderate", "Severe")
+    for dep, anx, st in itertools.product(levels, repeat=3):
+        label = derive_ground_truth(dass_stress_severity=st)
+        q = QuestionnaireResult(
+            dass21=Dass21Scores(
+                depression_score=0, anxiety_score=0, stress_score=0,
+                depression_level=dep, anxiety_level=anx, stress_level_dass=st, overall_severity=st,
+            ),
+            ground_truth_label=label,
+        )
+        elevated = [name for name, lvl in (("depression", dep), ("anxiety", anx), ("stress", st)) if lvl != "Normal"]
+        for arm, query in (("old", f"student with {label} stress"), ("current", questionnaire_query(q))):
+            ids = [d.chunk_id for d in retrieve(query, k=PRODUCTION_K)]
+            arms[arm]["actionable"].append(sum(i in ACTIONABLE_CHUNKS for i in ids) / PRODUCTION_K)
+            arms[arm]["matched"] += [SUBSCALE_CHUNK[name] in ids for name in elevated]
+            arms[arm]["sets"].add(frozenset(ids))
+    return {
+        arm: {
+            "profiles": 27,
+            "actionable_share": _mean(v["actionable"]),
+            "matched_rate": _mean([float(m) for m in v["matched"]]),
+            "n_elevated": len(v["matched"]),
+            "distinct_sets": len(v["sets"]),
+        }
+        for arm, v in arms.items()
+    }
+
+
+def format_questionnaire_branch(result: dict) -> str:
+    old, cur = result["old"], result["current"]
+    return "\n".join([
+        "## Questionnaire-only submissions (no free text)",
+        "",
+        "27 DASS profiles (each subscale Normal / Moderate / Severe), top "
+        f"{PRODUCTION_K}. *Actionable* = a coping-group or sleep-hygiene passage, the only "
+        "kind rule 4 can turn into a suggestion. *Matched* = the coping group for an elevated "
+        "subscale is retrieved (stress → time management, anxiety → regulating emotions, "
+        "depression → social support).",
+        "",
+        "| query construction | actionable share of top 4 | matched subscale reached | distinct top-4 sets |",
+        "|---|---:|---:|---:|",
+        f"| old: `student with <label> stress` | {old['actionable_share']:.0%} | "
+        f"{old['matched_rate']:.0%} of {old['n_elevated']} | {old['distinct_sets']} |",
+        f"| current: `questionnaire_query()` | {cur['actionable_share']:.0%} | "
+        f"{cur['matched_rate']:.0%} of {cur['n_elevated']} | {cur['distinct_sets']} |",
+        "",
+        "Relevance here is defined by section headings rather than by independent labels, so "
+        "this measures whether the query reaches the right section, not how good the advice is.",
+        "",
+    ])
+
+
+THRESHOLD_GRID = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60)
+
+
+def threshold_analysis(queries: list[Query], thresholds: tuple[float, ...] = THRESHOLD_GRID) -> dict:
+    """Would a cosine-distance cut-off on the top-k improve what is retrieved?
+
+    Scored on the natural queries in their production form, at production k.
+    A threshold earns its place only if it removes irrelevant passages while
+    keeping relevant ones and without emptying results: an emptied result makes
+    the service withhold advice, so every emptied query is a student who gets
+    none. AUROC summarises how well distance alone separates the two groups
+    before any particular cut-off is chosen.
+    """
+    from sklearn.metrics import roc_auc_score
+
+    hits: list[tuple[int, float, bool]] = []  # (query index, distance, relevant)
+    for i, q in enumerate(q for q in queries if q.style == "natural"):
+        for doc in retrieve(as_production_query(q.query), k=PRODUCTION_K):
+            hits.append((i, doc.distance, doc.chunk_id in q.relevant))
+    n_queries = len({i for i, _, _ in hits})
+    relevant = [d for _, d, r in hits if r]
+    irrelevant = [d for _, d, r in hits if not r]
+
+    def pct(values: list[float], p: float) -> float:
+        ordered = sorted(values)
+        return ordered[min(len(ordered) - 1, int(p * len(ordered)))] if ordered else float("nan")
+
+    rows = []
+    for t in thresholds:
+        kept = [(i, d, r) for i, d, r in hits if d <= t]
+        kept_queries = {i for i, _, _ in kept}
+        had_relevant = {i for i, _, r in hits if r}
+        keeps_relevant = {i for i, _, r in kept if r}
+        rows.append(
+            {
+                "threshold": t,
+                "irrelevant_removed": 1 - sum(1 for _, _, r in kept if not r) / max(1, len(irrelevant)),
+                "relevant_removed": 1 - sum(1 for _, _, r in kept if r) / max(1, len(relevant)),
+                "queries_emptied": n_queries - len(kept_queries),
+                "queries_losing_all_relevant": len(had_relevant - keeps_relevant),
+            }
+        )
+    labels = [r for _, _, r in hits]
+    return {
+        "n_queries": n_queries,
+        "n_hits": len(hits),
+        "relevant": {"n": len(relevant), "p10": pct(relevant, 0.1), "median": pct(relevant, 0.5), "p90": pct(relevant, 0.9)},
+        "irrelevant": {"n": len(irrelevant), "p10": pct(irrelevant, 0.1), "median": pct(irrelevant, 0.5), "p90": pct(irrelevant, 0.9)},
+        # Lower distance should mean relevant, hence the negation.
+        "auroc": roc_auc_score(labels, [-d for _, d, _ in hits]) if 0 < sum(labels) < len(labels) else float("nan"),
+        "rows": rows,
+    }
+
+
+def format_threshold_analysis(result: dict) -> str:
+    rel, irr = result["relevant"], result["irrelevant"]
+    lines = [
+        "## Similarity threshold: measured, not adopted",
+        "",
+        f"{result['n_queries']} natural queries in production form, top {PRODUCTION_K}, "
+        f"{result['n_hits']} retrieved passages. Cosine distance of relevant passages: median "
+        f"{rel['median']:.3f} (p10 {rel['p10']:.3f}, p90 {rel['p90']:.3f}, n = {rel['n']}); of "
+        f"irrelevant ones: median {irr['median']:.3f} (p10 {irr['p10']:.3f}, p90 {irr['p90']:.3f}, "
+        f"n = {irr['n']}). **AUROC of distance as a relevance signal: {result['auroc']:.3f}.**",
+        "",
+        "| cut-off | irrelevant removed | relevant removed | queries emptied | queries losing every relevant hit |",
+        "|---:|---:|---:|---:|---:|",
+    ]
+    for r in result["rows"]:
+        lines.append(
+            f"| {r['threshold']:.2f} | {r['irrelevant_removed']:.0%} | {r['relevant_removed']:.0%} | "
+            f"{r['queries_emptied']} | {r['queries_losing_all_relevant']} |"
+        )
+    lines += [
+        "",
+        "An emptied query means the service withholds advice for that student, and a query that "
+        "loses every relevant hit keeps only irrelevant ones. A cut-off is worth adopting only if "
+        "it removes many irrelevant passages while doing neither; read the table against that "
+        "standard. Downstream, the irrelevant passages that stay in the top 4 do not surface as "
+        "ungrounded advice: the faithfulness judge found 99 % of generated suggestions supported "
+        "at least partially (`faithfulness_eval.md`).",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--queryset", default=str(DEFAULT_QUERYSET))
@@ -420,6 +596,8 @@ def main() -> None:
     results = evaluate(queries)
     report = format_report(results)
     report += "\n" + format_comparison(compare_query_construction(queries))
+    report += "\n" + format_questionnaire_branch(questionnaire_branch_eval())
+    report += "\n" + format_threshold_analysis(threshold_analysis(queries))
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(report, encoding="utf-8")
     print(report)

@@ -6,6 +6,12 @@ Embedding preference order:
 2. Chroma's default ONNX MiniLM (English-leaning, still functional).
 
 Both are cached per-process.
+
+The fallback is only safe for a collection built with it. Both models emit
+384-dimensional vectors, so a query embedded by one against chunks embedded by
+the other raises nothing and returns plausible-looking nonsense. Ingest
+therefore stamps each chunk with `embedding_model_name()`, and the retriever
+refuses results stamped with a different model (see `app.rag.retriever`).
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 MULTILINGUAL_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+FALLBACK_EMBEDDING_MODEL = "chroma-default-all-MiniLM-L6-v2"
 
 
 @lru_cache(maxsize=1)
@@ -39,6 +46,13 @@ def _get_embedding_function():
             "Multilingual embedding model unavailable (%s); falling back to Chroma default", exc
         )
         return None
+
+
+def embedding_model_name() -> str:
+    """Name of the embedding model this process embeds queries and chunks with."""
+    if _get_embedding_function() is not None:
+        return MULTILINGUAL_EMBEDDING_MODEL
+    return FALLBACK_EMBEDDING_MODEL
 
 
 @lru_cache(maxsize=1)

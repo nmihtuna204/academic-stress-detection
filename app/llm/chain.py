@@ -72,7 +72,7 @@ ASSESSMENT DATA (anonymized):
 ## 1. What the student wrote
 {raw_text}
 
-## 2. Automated emotion analysis (PhoBERT model)
+## 2. Automated text analysis
 {emotion_summary}
 
 ## 3. Screening scale results
@@ -89,6 +89,15 @@ Give your assessment in exactly the required JSON format.
 
 
 def format_emotion(emotion: EmotionResult | None) -> str:
+    """Render the text-analysis block for the prompt.
+
+    The absence of a classifier reading is stated explicitly rather than left
+    as a missing line. PhoBERT only runs on Vietnamese input (see
+    `app.nlp.emotion.analyze`), so on English text this block carries lexicon
+    signal alone - and a reader given four bullet points with no model line has
+    no way to tell "the model saw no stress" from "the model never ran". Those
+    mean opposite things, and the generator must not confuse them.
+    """
     if emotion is None:
         return "(no free-text data)"
     lines = [
@@ -96,7 +105,13 @@ def format_emotion(emotion: EmotionResult | None) -> str:
         f"- Sentiment polarity: {emotion.sentiment_polarity.value}",
     ]
     if emotion.model_stress_level is not None:
-        lines.append(f"- Stress level per PhoBERT model: {emotion.model_stress_level.value}")
+        lines.append(f"- Stress level per the PhoBERT classifier: {emotion.model_stress_level.value}")
+    else:
+        lines.append(
+            "- PhoBERT classifier: DID NOT RUN (it is Vietnamese-only and this text was not "
+            "detected as Vietnamese). The absence of a model reading is not evidence of low "
+            "stress; weigh the questionnaire and the student's own words instead."
+        )
     if emotion.stress_keywords:
         lines.append(f"- Stress keywords detected: {', '.join(emotion.stress_keywords)}")
     if emotion.emotion_scores:

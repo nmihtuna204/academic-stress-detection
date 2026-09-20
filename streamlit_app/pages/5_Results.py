@@ -341,14 +341,17 @@ if assessment:
         st.markdown(assessment["reasoning"])
 
     # --- Recommendations --------------------------------------------------
-    section_title("Three things you could try", "leaf", hint="Pick whichever feels manageable")
+    # Empty when the model declined to advise beyond the retrieved material;
+    # the reason is shown by the advice_unavailable callout below instead.
     suggestions = assessment["suggestions"][:3]
-    recommendation_grid(
-        [
-            (REC_ICONS[i % len(REC_ICONS)], f"Suggestion {i + 1}", s)
-            for i, s in enumerate(suggestions)
-        ]
-    )
+    if suggestions:
+        section_title("Things you could try", "leaf", hint="Pick whichever feels manageable")
+        recommendation_grid(
+            [
+                (REC_ICONS[i % len(REC_ICONS)], f"Suggestion {i + 1}", s)
+                for i, s in enumerate(suggestions)
+            ]
+        )
 
     if len(assessment["suggestions"]) > 3:
         with st.expander("See more suggestions"):
@@ -362,16 +365,32 @@ if result.get("advice_unavailable_reason"):
 
 # --- Text analysis (secondary detail) -------------------------------------
 if emotion:
-    with st.expander("Analysis of what you wrote (PhoBERT model)"):
+    # The title must not name PhoBERT unless PhoBERT actually contributed. It is
+    # a Vietnamese-only classifier and is skipped on English input, in which case
+    # everything in this box comes from the bilingual lexicon instead. Labelling
+    # a lexicon result as a model result would misstate what the system did.
+    _model_ran = bool(emotion.get("model_stress_level"))
+    _title = (
+        "Analysis of what you wrote (PhoBERT classifier + keyword lexicon)"
+        if _model_ran
+        else "Analysis of what you wrote (keyword lexicon)"
+    )
+    with st.expander(_title):
         col5, col6 = st.columns(2)
         with col5:
             st.markdown(f"**Sentiment polarity:** {emotion['sentiment_polarity']}")
-            if emotion.get("model_stress_level"):
+            if _model_ran:
                 st.markdown(
                     "**Stress level per the model:** "
                     + LEVEL_LABELS.get(
                         emotion["model_stress_level"], emotion["model_stress_level"]
                     )
+                )
+            else:
+                st.caption(
+                    "The PhoBERT classifier did not run: it is trained on Vietnamese and "
+                    f"this entry was detected as **{emotion.get('language', 'non-Vietnamese')}**. "
+                    "Your level below comes from the questionnaires, which are unaffected."
                 )
         with col6:
             if emotion.get("stress_keywords"):

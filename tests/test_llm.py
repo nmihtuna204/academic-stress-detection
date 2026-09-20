@@ -7,6 +7,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage
 
 from app.llm.chain import (
+    HUMAN_PROMPT,
     assess,
     build_chain,
     format_context,
@@ -78,6 +79,72 @@ VALID_LLM_JSON = json.dumps(
 
 def make_fake_llm(content: str = VALID_LLM_JSON):
     return FakeMessagesListChatModel(responses=[AIMessage(content=content)])
+
+
+class TestEmotionBlockIsHonestAboutTheClassifier:
+    """The prompt must not imply PhoBERT ran when it did not.
+
+    PhoBERT is Vietnamese-only and is skipped on English input, which is the
+    default for the shipped interface. A block that simply omits the model line
+    leaves the generator unable to distinguish "the model saw little stress"
+    from "the model never ran" - opposite meanings.
+    """
+
+    def _emotion(self, model_level):
+        return EmotionResult(
+            emotion_label="negative",
+            emotion_scores={},
+            sentiment_polarity=SentimentPolarity.NEGATIVE,
+            stress_keywords=["deadline"],
+            language=Language.EN if model_level is None else Language.VI,
+            model_stress_level=model_level,
+        )
+
+    def test_absence_of_the_classifier_is_stated_not_omitted(self):
+        block = format_emotion(self._emotion(None))
+        assert "DID NOT RUN" in block
+        assert "not evidence of low stress" in block
+
+    def test_a_real_reading_is_reported_normally(self):
+        block = format_emotion(self._emotion(StressLevel.HIGH))
+        assert "PhoBERT classifier: High" in block
+        assert "DID NOT RUN" not in block
+
+    def test_prompt_header_does_not_promise_a_model(self):
+        """The section header is shared by both cases, so it must stay neutral."""
+        assert "PhoBERT" not in HUMAN_PROMPT
+
+
+class TestGroundedRefusalParses:
+    """An empty suggestion list is rule 4 working, not a malformed reply.
+
+    The 2026-09-19 no_rag ablation run lost assessments whose JSON was valid
+    and whose reasoning said "no reference material was provided": the schema
+    floor of one suggestion turned each correct refusal into a parse failure.
+    """
+
+    def test_empty_suggestions_parse(self):
+        reply = json.dumps(
+            {
+                "predicted_level": "Moderate",
+                "confidence": 0.7,
+                "reasoning": "No reference material was provided, so I cannot suggest anything.",
+                "suggestions": [],
+                "risk_flags": [],
+                "citations": [],
+            }
+        )
+        result = build_chain(llm=make_fake_llm(reply)).invoke(
+            {
+                "raw_text": "x",
+                "emotion_summary": "y",
+                "questionnaire_summary": "z",
+                "context_summary": "c",
+                "retrieved_docs": "d",
+            }
+        )
+        assert result.suggestions == []
+        assert result.predicted_level == StressLevel.MODERATE
 
 
 class TestChain:

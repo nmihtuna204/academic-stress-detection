@@ -177,13 +177,15 @@ class LlmAssessment(BaseModel):
     predicted_level: StressLevel = Field(..., description="Low/Moderate/High/Severe")
     confidence: float = Field(..., ge=0.0, le=1.0)
     reasoning: str = Field(..., description="Explanation, empathetic, non-diagnostic")
-    # Floor is 1, not 3. Prompt rule 4 forbids inventing advice the retrieved
-    # material does not support, so when retrieval is thin a fully compliant
-    # reply may carry fewer than three suggestions. A floor of 3 made those two
-    # rules contradictory and discarded the whole assessment on a validation
-    # error; grounding is the property worth keeping.
+    # No floor. Prompt rule 4 forbids inventing advice the retrieved material
+    # does not support, so a fully compliant reply may carry no suggestions at
+    # all. The floor was 3, then 1, and both made the two rules contradictory:
+    # the 2026-09-19 no_rag ablation run showed the model correctly returning
+    # `"suggestions": []` with "no reference material was provided" in its
+    # reasoning, and the floor turned that correct refusal into a parse failure
+    # and a fallback label. The service reports an empty list to the student.
     suggestions: list[str] = Field(
-        ..., min_length=1, max_length=5, description="Actionable coping suggestions"
+        ..., max_length=5, description="Actionable coping suggestions"
     )
     risk_flags: list[str] = Field(default_factory=list, description="e.g. self_harm_risk, severe_sleep_deprivation")
     citations: list[str] = Field(
