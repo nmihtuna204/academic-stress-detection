@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -44,14 +45,36 @@ CONFIGS: dict[str, tuple[bool, bool, bool]] = {
 METRIC_COLS = ["accuracy", "macro_f1", "cohen_kappa"]
 
 
-def interpret(table: pd.DataFrame) -> str:
-    """One short computed paragraph: which components matter, per the deltas."""
+def noise_floor(n: int, p: float = 0.5) -> float:
+    """Half-width of the 95% Wilson interval on accuracy at sample size `n`.
+
+    A delta smaller than this cannot be distinguished from sampling noise, and
+    reporting it directionally would claim a result the data does not support.
+    Computed at p=0.5, the widest (most conservative) case.
+    """
+    if n <= 0:
+        return float("inf")
+    z = 1.96
+    denom = 1 + z * z / n
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return half
+
+
+def interpret(table: pd.DataFrame, n_used: int | None = None) -> str:
+    """One short computed paragraph: which components matter, per the deltas.
+
+    Deltas below the sampling-noise floor are reported as indistinguishable from
+    zero rather than given a direction. Without this the paragraph would say
+    things like "removing the emotion features IMPROVES macro-F1 by 0.059" at
+    n=40, where the 95% interval is +/-0.148 - a claim the sample cannot carry.
+    """
     if table.empty or "full" not in set(table["config"]):
         return (
             "No interpretation available: the ablation has not produced results yet "
             "(a valid OPENAI_API_KEY is required)."
         )
     full_row = table[table["config"] == "full"].iloc[0]
+    floor = noise_floor(n_used) if n_used else None
     parts: list[str] = []
     for _, row in table[table["config"] != "full"].iterrows():
         delta = row["macro_f1"] - full_row["macro_f1"]
@@ -61,17 +84,31 @@ def interpret(table: pd.DataFrame) -> str:
             "no_emotion": "the emotion features",
             "text_only": "everything except the raw text",
         }.get(row["config"], row["config"])
-        direction = "drops" if delta < 0 else ("is unchanged" if delta == 0 else "IMPROVES")
-        parts.append(
-            f"removing {component} {direction} macro-F1 by {abs(delta):.3f} "
-            f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f})"
-        )
+        if floor is not None and abs(delta) < floor:
+            parts.append(
+                f"removing {component} moves macro-F1 by {delta:+.3f} "
+                f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f}), which is INSIDE the "
+                f"±{floor:.3f} sampling-noise floor at n={n_used} and therefore cannot be "
+                "distinguished from no effect"
+            )
+        else:
+            direction = "drops" if delta < 0 else ("is unchanged" if delta == 0 else "IMPROVES")
+            parts.append(
+                f"removing {component} {direction} macro-F1 by {abs(delta):.3f} "
+                f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f})"
+            )
     return (
         "Interpretation (computed from the table above): " + "; ".join(parts) + ". "
         "Components whose removal barely moves macro-F1 contribute little measurable "
         "signal on this dataset; large drops mark load-bearing components. Note that "
         "the questionnaire scores define the ground-truth label, so the "
         "no_questionnaire delta measures label leakage as much as feature value."
+        + (
+            f" Sampling-noise floor at n={n_used} is ±{floor:.3f} on accuracy (95% Wilson, "
+            "worst case p=0.5); only deltas larger than that are reported directionally."
+            if floor is not None
+            else ""
+        )
     )
 
 
@@ -239,7 +276,7 @@ def run(
         banner
         + table[display_cols].to_markdown(index=False)
         + "\n\n"
-        + interpret(table)
+        + interpret(table, n_used=n_used)
         + "\n"
         + _not_reported_section()
     )

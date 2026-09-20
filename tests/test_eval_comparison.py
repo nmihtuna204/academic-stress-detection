@@ -133,13 +133,14 @@ class TestLlmFullMocked:
                 risk_flags=[],
             )
 
+        import app.api.services as services_module
         import app.llm.chain as chain_module
         import app.nlp.emotion as emotion_module
-        import app.rag.retriever as retriever_module
 
         monkeypatch.setattr(chain_module, "assess", fake_assess)
         monkeypatch.setattr(emotion_module, "analyze", lambda text: None)
-        monkeypatch.setattr(retriever_module, "retrieve", lambda q, k=4: [])
+        monkeypatch.setattr(services_module, "retrieve", lambda q, k=4: [])
+        monkeypatch.setattr(services_module, "fetch_chunks", lambda ids: [])
 
         df = build_synthetic_dataset()
         small = pd.concat([df[df["split"] == "test"].head(3)])
@@ -162,16 +163,17 @@ class TestFailuresAreRecordedAndClassified:
     """
 
     def _run_with(self, exc, tmp_path, monkeypatch):
+        import app.api.services as services_module
         import app.llm.chain as chain_module
         import app.nlp.emotion as emotion_module
-        import app.rag.retriever as retriever_module
 
         async def raising_assess(**kwargs):
             raise exc
 
         monkeypatch.setattr(chain_module, "assess", raising_assess)
         monkeypatch.setattr(emotion_module, "analyze", lambda text: None)
-        monkeypatch.setattr(retriever_module, "retrieve", lambda q, k=4: [])
+        monkeypatch.setattr(services_module, "retrieve", lambda q, k=4: [])
+        monkeypatch.setattr(services_module, "fetch_chunks", lambda ids: [])
         df = build_synthetic_dataset()
         row = df[df["split"] == "test"].head(1)
         return asyncio.run(run_llm_full(row, cache_dir=tmp_path, llm=STUB_LLM))
@@ -256,9 +258,9 @@ class TestEvalUsesProductionRetrieval:
                 risk_flags=[],
             )
 
+        import app.api.services as services_module
         import app.llm.chain as chain_module
         import app.nlp.emotion as emotion_module
-        import app.rag.retriever as retriever_module
 
         def spy_retrieve(query, k=4):
             seen.append(query)
@@ -266,7 +268,8 @@ class TestEvalUsesProductionRetrieval:
 
         monkeypatch.setattr(chain_module, "assess", fake_assess)
         monkeypatch.setattr(emotion_module, "analyze", lambda text: emotion)
-        monkeypatch.setattr(retriever_module, "retrieve", spy_retrieve)
+        monkeypatch.setattr(services_module, "retrieve", spy_retrieve)
+        monkeypatch.setattr(services_module, "fetch_chunks", lambda ids: [])
 
         df = build_synthetic_dataset()
         row = df[df["split"] == "test"].head(1)

@@ -426,6 +426,49 @@ async def run_llm_zeroshot(df: pd.DataFrame, cache_dir: Path = DEFAULT_CACHE_DIR
 # ---------------------------------------------------------------------------
 
 
+def full_cache_key(
+    row: pd.Series, use_rag: bool, use_questionnaire: bool, use_emotion: bool
+) -> tuple[str, dict | None, dict | None]:
+    """Cache key for one llm_full row, plus the questionnaire results it hashes.
+
+    Public so readers of the cache (the faithfulness judge) find exactly the
+    replies the classification runs produced, rather than re-deriving the key.
+    """
+    from app.api.services import SUPPORT_CHUNK_IDS, needs_support_material
+    from app.scoring import score_dass21, score_pss10
+
+    settings = get_settings()
+    dass_result = pss_result = None
+    if use_questionnaire:
+        dass_result = score_dass21(dass_answers_from_row(row))
+        pss_result = score_pss10(pss_answers_from_row(row))
+
+    payload = {
+        "system": f"llm_full:{int(use_rag)}{int(use_questionnaire)}{int(use_emotion)}",
+        "model": settings.openai_model,
+        "endpoint": settings.openai_base_url,
+        "temperature": EVAL_TEMPERATURE,
+        # The key hashes inputs, not the retrieved passages, so a change to
+        # the query construction is invisible to it. Bump this whenever the
+        # retrieval path changes or the cache serves pre-change answers.
+        "query_shape": "v2-build_rag_query",
+        "text": str(row["text"]),
+        "use_rag": use_rag,
+        "use_questionnaire": use_questionnaire,
+        "use_emotion": use_emotion,
+        "dass": dass_result,
+        "pss": pss_result,
+    }
+    # Support passages pinned into the context change the input, so they belong
+    # in the key - but only where pinning fires. Items it does not touch keep
+    # the key they had before pinning existed, and their cached replies stay
+    # valid because their inputs genuinely did not change.
+    if use_rag and needs_support_material(dass_result, pss_result):
+        payload["pinned"] = list(SUPPORT_CHUNK_IDS)
+    key = _cache_key(payload)
+    return key, dass_result, pss_result
+
+
 async def _full_one(
     semaphore: asyncio.Semaphore,
     row: pd.Series,
@@ -437,38 +480,12 @@ async def _full_one(
     llm=None,
 ) -> tuple[str, bool]:
     """Run the proposed pipeline for one row (ablation-configurable)."""
-    from app.api.services import build_rag_query
+    from app.api.services import retrieve_for_assessment
     from app.llm.chain import assess
     from app.nlp.emotion import analyze
-    from app.rag.retriever import retrieve
-    from app.scoring import score_dass21, score_pss10
 
-    settings = get_settings()
     text = str(row["text"])
-
-    dass_result = pss_result = None
-    if use_questionnaire:
-        dass_result = score_dass21(dass_answers_from_row(row))
-        pss_result = score_pss10(pss_answers_from_row(row))
-
-    key = _cache_key(
-        {
-            "system": cache_tag,
-            "model": settings.openai_model,
-            "endpoint": settings.openai_base_url,
-            "temperature": EVAL_TEMPERATURE,
-            # The key hashes inputs, not the retrieved passages, so a change to
-            # the query construction is invisible to it. Bump this whenever the
-            # retrieval path changes or the cache serves pre-change answers.
-            "query_shape": "v2-build_rag_query",
-            "text": text,
-            "use_rag": use_rag,
-            "use_questionnaire": use_questionnaire,
-            "use_emotion": use_emotion,
-            "dass": dass_result,
-            "pss": pss_result,
-        }
-    )
+    key, dass_result, pss_result = full_cache_key(row, use_rag, use_questionnaire, use_emotion)
     cached = cache_get(cache_dir, key)
     if cached is not None:
         return cached["label"], "ok"
@@ -482,7 +499,7 @@ async def _full_one(
         # (RESULTS.md 4b) and produced a different top-4 chunk set on 53 % of
         # dataset items - so the number reported for the proposed system came
         # from a retrieval path the deployed system never runs.
-        docs = retrieve(build_rag_query(text, emotion, None), k=4)
+        docs = retrieve_for_assessment(text, emotion, None, dass_result, pss_result)
 
     async with semaphore:
         try:
@@ -522,6 +539,7 @@ async def _full_one(
             "reasoning": assessment.reasoning,
             "suggestions": assessment.suggestions,
             "risk_flags": assessment.risk_flags,
+            "citations": assessment.citations,
         },
     )
     return label, "ok"

@@ -150,6 +150,51 @@ class TestSubsampleTestSplit:
         assert subsample_test_split(df, 999).equals(df)
 
 
+class TestNoiseAwareInterpretation:
+    """A delta smaller than sampling noise must not be given a direction.
+
+    Before this guard the generated paragraph said "removing the emotion
+    features IMPROVES macro-F1 by 0.059" at n=40, where the 95% Wilson interval
+    is +/-0.148. The number was real; the word "IMPROVES" was not supported.
+    """
+
+    def _table(self, full_f1: float, other_f1: float, config: str = "no_emotion"):
+        import pandas as pd
+
+        return pd.DataFrame(
+            [
+                {"config": "full", "accuracy": 0.5, "macro_f1": full_f1, "cohen_kappa": 0.3},
+                {"config": config, "accuracy": 0.5, "macro_f1": other_f1, "cohen_kappa": 0.3},
+            ]
+        )
+
+    def test_noise_floor_shrinks_with_sample_size(self):
+        from app.eval.ablation import noise_floor
+
+        assert noise_floor(40) > noise_floor(70) > noise_floor(500)
+        assert noise_floor(0) == float("inf")
+
+    def test_small_delta_is_not_given_a_direction(self):
+        from app.eval.ablation import interpret
+
+        text = interpret(self._table(0.534, 0.593), n_used=40)
+        assert "INSIDE" in text and "cannot be distinguished" in text
+        assert "IMPROVES" not in text
+
+    def test_large_delta_still_reads_directionally(self):
+        from app.eval.ablation import interpret
+
+        text = interpret(self._table(0.534, 0.123, config="no_questionnaire"), n_used=40)
+        assert "drops" in text
+        assert "INSIDE" not in text
+
+    def test_without_a_sample_size_it_stays_silent_about_noise(self):
+        from app.eval.ablation import interpret
+
+        text = interpret(self._table(0.534, 0.593))
+        assert "sampling-noise floor" not in text
+
+
 class TestUnreportableResults:
     """A run whose replies mostly failed must not be published as a number.
 
