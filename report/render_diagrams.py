@@ -20,7 +20,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "REPORT_DIAGRAMS.md"
-OUT = ROOT / "International_University__HCMIU___VNU__Pre_thesis_and_Thesis_LaTeX_Template__1_" / "images"
+OUT = ROOT / "latex" / "images"
 MERMAID_JS = "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">

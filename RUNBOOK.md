@@ -1,38 +1,46 @@
-# Runbook — chạy project trơn tru cho buổi bảo vệ
+# Runbook — running the system
 
-Mọi lệnh chạy từ thư mục gốc project, trong **PowerShell**.
-Mỗi bước dưới đây đã được chạy thật và xác minh ngày 2026-09-09.
+Every command runs from the project root. The PowerShell forms below are what
+this project is developed against (Windows); the underlying commands are the
+same everywhere.
+
+Each step here has been executed and verified, most recently on 2026-09-23.
 
 ---
 
-## 0. Kiểm tra môi trường (chỉ làm lần đầu / máy mới)
+## 0. First run on a new machine
 
 ```powershell
-python --version                    # cần 3.11+  (máy này: 3.13)
+python --version    # 3.11+ required
 python -c "import fastapi, streamlit, torch, chromadb; print('deps OK')"
 ```
 
-Nếu thiếu package:
+If anything is missing:
 
 ```powershell
-pip install --user -r requirements.txt
+pip install -r requirements.txt
 ```
 
-Kiểm tra knowledge base đã nạp vào Chroma chưa (**phải là 23**):
+Check the knowledge base is loaded into Chroma. **It must report 23:**
 
 ```powershell
 python -c "import sys; sys.path.insert(0,'.'); from app.rag.store import get_collection; print('chunks:', get_collection().count())"
 ```
 
-Nếu ra `0`, nạp lại:
+If it reports `0`, ingest:
 
 ```powershell
 python -m app.rag.ingest
 ```
 
+`data/chroma/` is not in git — it is rebuilt from `data/knowledge/*.md` by that
+command. Note that ingest upserts with ids derived from the filename, so if you
+rename a knowledge file you must delete `data/chroma/` first or the old chunks
+linger.
+
 ---
 
-## 1. Dọn cổng cũ (tránh port đã bị chiếm)
+## 1. Free the ports
 
 ```powershell
 Get-NetTCPConnection -State Listen -LocalPort 8000,8501 -ErrorAction SilentlyContinue |
@@ -42,38 +50,42 @@ Get-NetTCPConnection -State Listen -LocalPort 8000,8501 -ErrorAction SilentlyCon
 
 ---
 
-## 2. Khởi động 2 tiến trình — **hai cửa sổ PowerShell riêng**
+## 2. Start the two processes, in two separate windows
 
-**Cửa sổ 1 — API (FastAPI):**
+**Window 1 — the API:**
 
 ```powershell
 $env:PYTHONIOENCODING = "utf-8"
 python -m uvicorn app.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Đợi tới khi thấy `Application startup complete.`
+Wait for `Application startup complete.`
 
-**Cửa sổ 2 — giao diện (Streamlit):**
+**Window 2 — the interface:**
 
 ```powershell
 $env:PYTHONIOENCODING = "utf-8"
 python -m streamlit run streamlit_app/Home.py --server.port 8501
 ```
 
+`PYTHONIOENCODING=utf-8` is not optional on a Windows console: without it the
+Vietnamese text in logs and knowledge passages raises a codec error.
+
 ---
 
-## 3. ⚠️ WARM — bước quan trọng nhất, đừng bỏ
+## 3. Warm the models — do not skip this
 
-Request đầu tiên phải nạp PhoBERT (~8s) + embedder (~11s) = **~25 giây màn hình trắng**.
-Đốt nó ở đây, không đốt trên sân khấu.
+The first request loads PhoBERT (~8 s) and the sentence embedder (~11 s), so a
+cold system shows roughly **25 seconds of blank screen**. Spend that here, not
+in front of an audience.
 
-**Cửa sổ 3:**
+**Window 3:**
 
 ```powershell
 python scripts/warm.py
 ```
 
-**Kết quả mong đợi** (lần đầu dòng `health` sẽ mất ~25s — đó là bình thường):
+Expected output — the first `health` line taking ~25 s is normal:
 
 ```
   [ok]   health              0.0s   {'status': 'ok', ..., 'knowledge_chunks': 23}
@@ -85,78 +97,88 @@ python scripts/warm.py
 Ready.
 ```
 
-Script tự kiểm tra và **báo lỗi rõ ràng** nếu:
+The script diagnoses rather than leaving you to guess. It reports a clear cause
+when the API is unreachable, when `knowledge_chunks` is 0, when generation is
+unavailable because the LLM quota is exhausted, and when the second health call
+is still slow (meaning nothing actually warmed).
 
-- không kết nối được API → nhắc bật uvicorn
-- `knowledge_chunks: 0` → nhắc chạy `python -m app.rag.ingest`
-- `[WARN] generation ... NOT available` → hết quota Groq, xem §6
-- `second health call` vẫn chậm → chưa thật sự warm
+One deliberate detail: the warm-up submits DASS-21 items 17 and 21 as `0`. Those
+are the two risk items, and a non-zero answer would route the request into the
+crisis branch — which returns helpline text without calling retrieval or the
+generator, leaving exactly the two slow components cold.
 
 ---
 
-## 4. Kiểm tra trước khi trình bày
+## 4. Pre-flight checks
 
 ```powershell
 curl.exe -s http://127.0.0.1:8000/health
 curl.exe -s http://127.0.0.1:8501/_stcore/health
 ```
 
-Mong đợi: `{"status":"ok",...,"knowledge_chunks":23}` và `ok`.
-
-Lần gọi thứ hai phải **dưới 1 giây**. Nếu vẫn ~25s là chưa warm.
-
-**Mở app:**
+Expect `{"status":"ok",...,"knowledge_chunks":23}` and `ok`. The second health
+call must come back in under a second; ~25 s means the system is still cold.
 
 ```powershell
 Start-Process "http://localhost:8501"
 ```
 
-### Checklist trình duyệt (2 việc, hay bị quên)
+Two browser settings that are easy to forget:
 
-1. **TẮT auto-translate** của Edge/Chrome — nếu không, giao diện lẫn Anh–Việt.
-2. Muốn demo lại từ màn hình consent → mở **cửa sổ ẩn danh** (consent đã tick sẽ được nhớ).
+1. **Turn off auto-translate** in Edge/Chrome, or the interface renders as a
+   mix of English and Vietnamese.
+2. To demo from the consent screen, open a **private window** — a consent that
+   has already been accepted is remembered.
 
 ---
 
-## 5. Số liệu demo — dùng đúng những con số này
+## 5. Inputs that produce each outcome
 
-| Muốn ra | DASS-21 | PSS-10 |
+| Target outcome | DASS-21 | PSS-10 |
 |---|---|---|
-| **High** (demo chính) | tất cả **2**, riêng **câu 17 & 21 = 0** | bất kỳ |
-| Severe | tất cả **3**, riêng **17 & 21 = 0** | bất kỳ |
-| Moderate | tất cả **0** | tất cả **0** |
-| Low | tất cả **0** | câu **4, 5, 7, 8 = 4**, còn lại **0** |
-| **Crisis** (cố ý) | tất cả **0**, riêng **17 & 21 = 3** | bất kỳ |
+| **High** (main demo) | all **2**, except items **17 & 21 = 0** | any |
+| Severe | all **3**, except items **17 & 21 = 0** | any |
+| Moderate | all **0** | all **0** |
+| Low | all **0** | items **4, 5, 7, 8 = 4**, rest **0** |
+| **Crisis** (intentional) | all **0**, except items **17 & 21 = 3** | any |
 
-⚠️ **Câu 17 và 21 là hai câu rủi ro** ("I felt I wasn't worth much as a person" /
-"I felt that life was meaningless"). Bấm **2** cho cả hai sẽ kích hoạt cảnh báo
-khủng hoảng — đó là hành vi **đúng**, không phải lỗi.
+Items 17 and 21 are the risk items — *"I felt I wasn't worth much as a person"*
+and *"I felt that life was meaningless"*. Answering **2** or higher on both
+triggers the crisis screen. That is correct behaviour, not a fault.
 
-**Demo crisis bằng free text** (mạnh hơn, không cần điền bảng):
+To demo the crisis path from free text instead, which is stronger because it
+needs no questionnaire:
 
 ```
 I just want to sleep for a very long time and never wake up again.
 ```
 
-Đây là false-negative #16 đã công bố trong báo cáo — rule cũ trượt, rule mới bắt được.
+This is published false negative #16: the original phrase-list rule missed it
+and the rebuilt construct-based rule catches it.
 
-⚠️ Nút **Save** ở trang "Share how you feel" **không** gọi API.
-Phân tích chỉ chạy khi bấm **"Analyse now"** ở trang **Results**.
+Note that **Save** on the "Share how you feel" page does not call the API. The
+analysis runs when you press **Analyse now** on the Results page.
 
 ---
 
-## 6. Nếu hết quota LLM
+## 6. When the LLM quota is exhausted
 
 ```powershell
-python scripts/check_llm.py     # mục 6 = hạn ngạch ngày thật
+python scripts/check_llm.py     # section 6 reports the real daily allowance
 ```
 
-App vẫn chạy đầy đủ phần tất định và **hiện lý do** thay vì để trống.
-Phương án dự phòng: mở `data/eval/llm_cache/` — 126 output thật của chính chain đó.
+The application still runs every deterministic component and **states the
+reason** rather than showing an empty panel. `data/eval/llm_cache/` holds real
+outputs from the same chain if you need to show generated advice without
+spending quota.
+
+Groq's daily token cap is the limit that stops long evaluation runs, and it
+appears in **no response header** — only in the body of a 429. Never infer
+headroom from a successful small request.
 
 ---
 
-## 7. Dừng
+## 7. Stop
 
 ```powershell
 Get-NetTCPConnection -State Listen -LocalPort 8000,8501 -ErrorAction SilentlyContinue |
@@ -166,13 +188,14 @@ Get-NetTCPConnection -State Listen -LocalPort 8000,8501 -ErrorAction SilentlyCon
 
 ---
 
-## Xử lý sự cố nhanh
+## Troubleshooting
 
-| Triệu chứng | Nguyên nhân | Cách xử lý |
+| Symptom | Cause | Fix |
 |---|---|---|
-| Trang trắng ~25s | Chưa warm | Chạy lại §3 |
-| `knowledge_chunks: 0` | Chroma rỗng | `python -m app.rag.ingest` |
-| Giao diện lẫn tiếng Việt | Trình duyệt tự dịch | Tắt auto-translate |
-| Advice trống | Hết quota Groq | §6 |
-| Nhảy vào màn hình crisis | Câu 17/21 ≥ 2 | Đặt về 0 hoặc 1 |
-| `ModuleNotFoundError: app` | Chạy sai thư mục | `cd` về gốc project |
+| Blank page for ~25 s | Not warmed | Run §3 |
+| `knowledge_chunks: 0` | Chroma is empty | `python -m app.rag.ingest` |
+| Interface half in Vietnamese | Browser auto-translate | Turn it off |
+| No advice, with a stated reason | Groq quota exhausted | §6 |
+| Jumps to the crisis screen | DASS items 17/21 ≥ 2 | Set them to 0 or 1 |
+| `ModuleNotFoundError: app` | Wrong working directory | `cd` to the project root |
+| `UnicodeEncodeError` in the console | Missing encoding | `$env:PYTHONIOENCODING = "utf-8"` |

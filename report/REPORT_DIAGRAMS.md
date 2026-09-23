@@ -9,7 +9,7 @@ Mỗi khối dưới đây là một hình trong report LaTeX. Cách dùng thủ
 
 1. Dán khối vào <https://mermaid.live> → *Actions* → **PNG** (scale 2×, nền trắng).
 2. Lưu đúng **tên file** ghi ở tiêu đề mỗi khối vào thư mục
-   `report/International_University__HCMIU___VNU__Pre_thesis_and_Thesis_LaTeX_Template__1_/images/`.
+   `report/latex/images/`.
 3. Compile lại. Report dùng macro `\diagram{...}`: khi file PNG **chưa có**, LaTeX
    in một khung "Insert diagram …" thay cho hình (không lỗi compile); khi file có,
    hình tự thay vào đúng chỗ.

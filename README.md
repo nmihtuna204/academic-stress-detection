@@ -172,18 +172,28 @@ run at temperature 0 for `llm_zeroshot` and are disk-cached for all systems.
 
 ## Report and slides
 
-The Markdown report is the single source of truth; the other formats are
-generated from it, so a number can never differ between them.
+The submitted report lives in [`report/latex/`](report/latex/) — `main.tex`
+plus `chapters/*.tex`, in the HCMIU template. Build it with pdfLaTeX:
 
-```bash
-python report/build_docx.py     # -> report/PreThesis_Report.docx
-python report/build_latex.py    # -> report/PreThesis_Report.tex   (~53 pages)
-python report/build_slides.py   # -> report/PreThesis_Slides.pptx  (22 slides)
+```powershell
+cd report/latex
+.\build.ps1                     # -> main.pdf, 75 pages, about 12 s
 ```
 
-The `.tex` needs **XeLaTeX or LuaLaTeX**, not pdfLaTeX: the report contains
-Vietnamese verbatim quotations and Greek letters. On Overleaf, set
-Menu -> Compiler -> XeLaTeX. Slides need `python-pptx`.
+Every figure in it is generated rather than drawn, so a changed result cannot
+leave a stale picture behind:
+
+```bash
+python report/make_report_figures.py   # 13 charts, read from data/eval/
+python report/render_diagrams.py       # 12 Mermaid diagrams (Playwright)
+python report/capture_screenshots.py   # 5 UI screenshots (needs the app running)
+python report/build_slides.py          # the defence deck
+```
+
+The build PDF is not tracked; `docs/RESULTS.md` and `data/eval/` are the
+authoritative numbers. An earlier Markdown-sourced version of the report is in
+[`report/archive/`](report/archive/) and is **not current** — see the README
+there before reading anything in it.
 
 ## Repository layout
 

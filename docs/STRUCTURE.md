@@ -255,17 +255,20 @@ graph LR
         K3 --> E2
         E2 --> E3["eval/compare.py"]
         E2 --> E4["eval/ablation.py<br/>5 configs"]
+        E2 --> E5["eval/faithfulness_eval.py<br/>LLM judge + no-RAG control"]
+        E5 --> R1
         E3 --> R1["data/eval/*.json, *.md, *.png"]
         E4 --> R1
     end
 
     subgraph SAFETY["Safety evaluation"]
-        S1["crisis_testset.jsonl<br/>50 hand-labelled"]
+        S1["crisis_testset_heldout.jsonl<br/>60 bilingual, frozen<br/>before the rule was written"]
         S1 --> S2["eval/crisis_eval.py"]
-        S2 --> R2["crisis_eval.md<br/>P .800 R .500"]
+        S2 --> R2["crisis_eval_heldout.md<br/>P 1.000 R .867 F1 .929"]
+        S3["crisis_testset.jsonl / _en.jsonl<br/>development sets - fitted,<br/>not evidence"] --> S2
     end
 
-    R1 --> RPT["report/PreThesis_Report.md"]
+    R1 --> RPT["report/latex/ (submitted)"]
     R2 --> RPT
 
     classDef stale fill:#fff4e5,stroke:#b26b00,stroke-dasharray:4 3
@@ -337,8 +340,9 @@ Green nodes are at 100 % statement coverage: both scoring engines, the ground-tr
 | `python research/generate_dataset.py` | [research/generate_dataset.py](../research/generate_dataset.py) | Regenerate the dataset |
 | `python research/phobert_finetune.py` | [research/phobert_finetune.py](../research/phobert_finetune.py) | Fine-tune the classifier |
 | `python scripts/export_dataset.py` | [scripts/export_dataset.py](../scripts/export_dataset.py) | Anonymised research export |
-| `python report/build_docx.py` | [report/build_docx.py](../report/build_docx.py) | Rebuild the thesis `.docx` |
-| `pytest tests/ -q` | — | 198 tests |
+| `python report/make_report_figures.py` | [report/make_report_figures.py](../report/make_report_figures.py) | Regenerate the report's 13 charts |
+| `.\build.ps1` (in `report/latex/`) | [report/latex/](../report/latex/) | Build the submitted report PDF |
+| `pytest tests/ -q` | — | 383 tests |
 
 ---
 
@@ -350,5 +354,6 @@ Green nodes are at 100 % statement coverage: both scoring engines, the ground-tr
 | [docs/FEATURE_MATRIX.md](FEATURE_MATRIX.md) | Feature status, effort, grade impact |
 | [docs/RISKS.md](RISKS.md) | Top committee questions and current answers |
 | [docs/RESULTS.md](RESULTS.md) | Generated result tables |
-| [report/PreThesis_Report.md](../report/PreThesis_Report.md) | The thesis report |
+| [report/latex/](../report/latex/) | The submitted report (main.tex + chapters/) |
+| [report/archive/](../report/archive/) | Superseded report artefacts — not current, see its README |
 | [report/CITATIONS_TO_VERIFY.md](../report/CITATIONS_TO_VERIFY.md) | References requiring confirmation |

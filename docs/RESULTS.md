@@ -7,8 +7,9 @@ synthetic data it is labeled as such. Regeneration commands are given with
 each table (figures land in `data/eval/`, which is intentionally not in git).
 
 Last regenerated: 2026-07-18/19 on the synthetic dataset; the crisis-rule and
-retrieval-quality sections re-run 2026-09-06; `llm_full`, the ablation and the
-faithfulness section re-run 2026-09-19 after the cache contamination in §2.
+retrieval-quality sections re-run 2026-09-06; `llm_full` and the faithfulness
+section re-run 2026-09-19 after the cache contamination in §2; the ablation
+completed 2026-09-20 (all five configurations, §3).
 
 ---
 
@@ -81,37 +82,70 @@ assumed, and the numbers belong to the model that produced them.
 - **Its weak class is High (F1 0.345),** the class the questionnaire rule places
   between two neighbours.
 
-## 3. Ablation study — re-run 2026-09-19
+## 3. Ablation study — complete, re-run 2026-09-20
 
 Regenerate: `python -m app.eval.ablation --dataset synthetic --limit 40`
 (artifacts: `data/eval/ablation.csv`, `ablation.md`, `ablation.png`)
 
-Stratified 40/70-item subsample, seed 42, identical across configurations.
+Stratified 40/70-item subsample, seed 42, identical across configurations. All
+five configurations now have 40/40 real model replies: the completing run made
+78 live calls with **zero rate-limit refusals and zero parse failures**.
 
 | config | accuracy | macro-F1 | kappa | Δ macro-F1 |
 |---|---:|---:|---:|---:|
-| full | 0.700 | 0.6729 | 0.6141 | — |
-| no_rag | 0.675 | 0.6262 | 0.5860 | −0.047 |
-| no_questionnaire | *pending* | | | |
-| no_emotion | 0.600 | 0.5925 | 0.4855 | −0.080 |
-| text_only | *pending* | | | |
+| full | 0.675 | 0.6399 | 0.5847 | — |
+| no_rag | 0.675 | 0.6262 | 0.5860 | −0.014 |
+| no_questionnaire | 0.675 | 0.5467 | 0.5390 | −0.093 |
+| no_emotion | 0.550 | 0.5364 | 0.4231 | −0.104 |
+| text_only | 0.525 | 0.4923 | 0.3537 | −0.148 |
 
 **The sampling-noise floor at n = 40 is ±0.148** on accuracy (95 % Wilson, worst
 case p = 0.5). The harness computes it and refuses to give a direction to any
 delta inside it.
 
-- **No text-side component is measurably load-bearing for the label.** Removing
-  retrieval (−0.047) or the emotion features (−0.080) moves macro-F1 by less than
-  the floor. That is expected for RAG: its job is to ground the *advice*, not to
-  classify, and §4b measures that job directly.
-- **`no_questionnaire` and `text_only` are pending** the Groq free-tier daily
-  token allowance (refills at roughly 139 tokens/minute). A first pass gave
-  `no_questionnaire` 0.625 / 0.509 with 7/40 fallback labels (6 rate-limited):
-  under the harness's 20 % refusal threshold but still biased, so not quoted as a
-  result. `text_only` had 28/40 rate-limited and was refused.
+- **No component's removal produces a delta distinguishable from sampling
+  noise.** That includes `text_only`, which strips every component and still
+  lands at −0.1476, marginally inside the floor. The honest reading is that **at
+  n = 40 this ablation establishes nothing about any component**, and it should
+  not be cited as though it did.
+- **The ordering is nevertheless monotone and in the expected direction**:
+  0.640 > 0.626 > 0.547 > 0.536 > 0.492. Removing more components never once
+  improves the score. That is consistent with each component contributing, but
+  consistency is not evidence at this sample size.
+- **Underpowered by design of the data, not of the harness.** Resolving a 0.05
+  effect needs n ≈ 600; the entire test split is 70 items. No amount of further
+  running fixes this — only a larger labelled set would.
 - **The earlier "questionnaire removal collapses macro-F1 by 0.411" is
   withdrawn.** That run's `no_questionnaire` predictions were 40/40 test stubs
-  (see the §2 correction), so it measured the constant-Moderate floor.
+  (see the §2 correction), so it measured the constant-Moderate floor. Its
+  replacement, −0.093, is inside the noise floor. Note that the questionnaire
+  scores define the ground-truth label, so any delta here measures label leakage
+  as much as feature value.
+
+**Why `full`, `no_questionnaire` and `no_emotion` differ from the 2026-09-19
+run.** Support-passage pinning (§4b) entered the cache key after that run, and
+it fires for 32 of the 40 items in `full` and `no_emotion` — those items were
+therefore regenerated with the pinned help-seeking passages in context.
+`no_questionnaire` changed for a different reason: its 2026-09-19 pass was cut
+short by the daily token cap. `no_rag` and `text_only` do not use retrieval, so
+their keys were untouched, and **`no_rag` reproduced its previous numbers to
+four decimal places** — an unintended control that confirms the mechanism.
+
+**A safety intervention with a measurable cost.** Pinning was added so that rule
+6 (encourage professional support) has material to work from in severe cases;
+before it, support-resource passages were retrieved for 0 of 70 test items. It
+moved `full` from macro-F1 0.673 to 0.640. The change is inside the noise floor
+and so not established, but it is in the direction of a real trade-off and is
+reported rather than omitted.
+
+**Residual caveat.** `full_cache_key` carries a `query_shape` field that was not
+bumped when the lexicon-ordering defect was fixed, so up to 3 of 40 items may
+serve replies generated from the pre-fix top-4 (`faithfulness_eval.md` carries
+the sensitivity analysis that excludes them; the result does not change). The
+exposure is ±0.075 on accuracy, below the ±0.148 floor. Re-running the three
+retrieval-using configurations under a bumped key would cost roughly 216 K
+tokens — over a day's allowance — to correct an error smaller than the noise
+floor, so it was not done.
 
 **Schema defect found by this run, fixed.** With no retrieved material the model
 follows prompt rule 4 and returns `"suggestions": []`, stating in its reasoning

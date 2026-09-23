@@ -20,7 +20,7 @@ from playwright.sync_api import Page, sync_playwright
 
 APP = "http://127.0.0.1:8501/"
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "International_University__HCMIU___VNU__Pre_thesis_and_Thesis_LaTeX_Template__1_" / "images"
+OUT = ROOT / "latex" / "images"
 
 JOURNAL_TEXT = (
     "This week I felt overwhelmed. I have three deadlines on Friday and a midterm next "

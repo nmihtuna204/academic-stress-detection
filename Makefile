@@ -1,6 +1,6 @@
 # Convenience targets (POSIX make; on Windows use the underlying commands or Git Bash).
 
-.PHONY: install seed test api ui eval compare ablation crisis-eval export lint docker-up docker-down
+.PHONY: install seed test api ui eval compare ablation crisis-eval retrieval-eval faithfulness export lint docker-up docker-down
 
 install:
 	pip install -r requirements.txt
@@ -15,7 +15,7 @@ api:
 	uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 
 ui:
-	streamlit run streamlit_app/Trang_Chu.py
+	streamlit run streamlit_app/Home.py
 
 eval:
 	python -m app.eval.evaluate
@@ -28,6 +28,12 @@ ablation:
 
 crisis-eval:
 	python -m app.eval.crisis_eval
+
+retrieval-eval:
+	python -m app.eval.retrieval_eval
+
+faithfulness:
+	python -m app.eval.faithfulness_eval --limit 40
 
 export:
 	python scripts/export_dataset.py --split

@@ -8,7 +8,7 @@ be checked against docs/RESULTS.md before the figure is trusted.
 Usage:
     python report/make_report_figures.py
 Output:
-    report/International_University__HCMIU___VNU__Pre_thesis_and_Thesis_LaTeX_Template__1_/images/fig_*.png
+    report/latex/images/fig_*.png
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import pandas as pd  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 EVAL = ROOT / "data" / "eval"
-OUT = ROOT / "report" / "International_University__HCMIU___VNU__Pre_thesis_and_Thesis_LaTeX_Template__1_" / "images"
+OUT = ROOT / "report" / "latex" / "images"
 OUT.mkdir(parents=True, exist_ok=True)
 
 LEVELS = ["Low", "Moderate", "High", "Severe"]

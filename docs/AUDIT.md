@@ -57,7 +57,9 @@ Every number in this document was produced by executing something in this repo. 
 
 ### 1.4 Uncommitted work
 
-8 modified files (+814/−376) and 7 untracked paths (`streamlit_app/ui/`, `streamlit_app/static/`, `streamlit_app/preview.py`, `design-system/`, `.streamlit/`, `tests/test_retriever.py`, `run.md`). **The entire UI redesign and its design-system documentation are outside version control.** This is the single largest uncommitted risk in the repo.
+8 modified files (+814/−376) and 7 untracked paths (`streamlit_app/ui/`, `streamlit_app/static/`, `streamlit_app/preview.py`, `design-system/`, `.streamlit/`, `tests/test_retriever.py`, `run.md`). **The entire UI redesign and its design-system documentation are outside version control.** This was the single largest uncommitted risk in the repo.
+
+> **Resolved.** All of the above is committed. A second, larger episode of the same failure followed — eleven days of work, including the whole LaTeX report, sat uncommitted until 2026-09-20 — so the finding is left here rather than deleted. `run.md` has since been merged into [RUNBOOK.md](../RUNBOOK.md).
 
 ### 1.5 Entry points (verified against [Makefile](../Makefile))
 
