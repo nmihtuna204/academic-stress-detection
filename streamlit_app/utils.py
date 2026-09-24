@@ -46,6 +46,19 @@ DASS_SEVERITY_LABELS = {
 PSS_CATEGORY_LABELS = {"Low": "Low", "Moderate": "Moderate", "High": "High"}
 
 
+def headline_level(record: dict) -> str | None:
+    """The level to show as the headline for a stored assessment.
+
+    The validated questionnaire decides whenever one was completed; the language
+    model's reading stands in only when there is no questionnaire to defer to.
+    This is the rule the Results page applies to its hero. Every other place that
+    shows a level must use this function rather than restate the rule: the History
+    page and both trend charts once led with the model's label, so the same
+    assessment read "High" on Results and "Very high" in History.
+    """
+    return record.get("ground_truth_label") or record.get("llm_predicted_label")
+
+
 def init_state() -> None:
     """Ensure all session-state keys exist."""
     defaults = {

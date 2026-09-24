@@ -27,6 +27,7 @@ from utils import (
     PSS_CATEGORY_LABELS,
     api_delete,
     api_get,
+    headline_level,
     require_consent,
 )
 
@@ -77,7 +78,7 @@ tiles: list[tuple[str, str, str | None, str]] = [
     ("Assessments taken", str(len(predictions)), None, "accent"),
 ]
 if latest:
-    lv_latest = latest["llm_predicted_label"] or latest["ground_truth_label"]
+    lv_latest = headline_level(latest)
     tiles.append(
         ("Most recent", LEVEL_LABELS.get(lv_latest, "—"),
          latest["created_at"][:10], "accent")
@@ -87,10 +88,9 @@ stat_grid(tiles)
 
 # --- Trend ----------------------------------------------------------------
 points = [
-    (p["created_at"][:16].replace("T", " "),
-     p["llm_predicted_label"] or p["ground_truth_label"])
+    (p["created_at"][:16].replace("T", " "), headline_level(p))
     for p in predictions
-    if (p.get("llm_predicted_label") or p.get("ground_truth_label"))
+    if headline_level(p)
 ]
 if len(points) >= 2:
     section_title("Change over time", "trending-up")
@@ -108,15 +108,15 @@ if predictions:
     section_title("Your assessments", "clock", hint="Newest first")
     with timeline():
         for p in reversed(predictions):
-            lv = p["llm_predicted_label"] or p["ground_truth_label"]
+            lv = headline_level(p)
             badge = level_badge(lv, LEVEL_LABELS.get(lv, "—")) if lv else ""
-            bits = []
-            if p.get("ground_truth_label"):
-                bits.append(
-                    f"Per questionnaire: {LEVEL_LABELS.get(p['ground_truth_label'], '—')}"
-                )
+            model_lv = p.get("llm_predicted_label")
+            bits = ["From your questionnaires" if p.get("ground_truth_label") else "From your writing (AI)"]
+            # Shown, not hidden, when the model read the writing differently - as on Results.
+            if p.get("ground_truth_label") and model_lv and model_lv != p["ground_truth_label"]:
+                bits.append(f"AI reading of your writing: {LEVEL_LABELS.get(model_lv, '—')}")
             if p.get("llm_confidence") is not None:
-                bits.append(f"Confidence {p['llm_confidence']:.0%}")
+                bits.append(f"AI confidence {p['llm_confidence']:.0%}")
             timeline_item(
                 p["created_at"][:16].replace("T", " "),
                 lv or "Low",

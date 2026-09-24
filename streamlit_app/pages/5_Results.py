@@ -30,6 +30,7 @@ from utils import (
     PSS_CATEGORY_LABELS,
     api_get,
     api_post,
+    headline_level,
     require_consent,
     show_crisis,
 )
@@ -405,9 +406,9 @@ if student_id:
     history = api_get(f"/history/{student_id}")
     preds = (history or {}).get("predictions", [])
     points = [
-        (p["created_at"][:16].replace("T", " "), p["llm_predicted_label"] or p["ground_truth_label"])
+        (p["created_at"][:16].replace("T", " "), headline_level(p))
         for p in preds
-        if (p.get("llm_predicted_label") or p.get("ground_truth_label"))
+        if headline_level(p)
     ]
     if len(points) >= 2:
         section_title("Change across assessments", "trending-up")
