@@ -105,7 +105,7 @@ status is kept in parentheses so the delta is visible rather than quietly overwr
 | Feature | Status | Evidence | Effort | Impact |
 |---|---|---|---|---|
 | Test suite | **Done** — **277 tests, all passing** (2026-09-08; was 198) | `python -m pytest tests/ -q` | — | — |
-| Coverage on `app/` | **Done** — **94 % on the application code**, 70 % once the offline evaluation scripts (`latency_eval.py`, `make_figures.py` — untested) are included; services 95 %, scoring 100 %, safety 100 %, retriever 100 % | `pytest --cov=app` | — | — |
+| Coverage on `app/` | **Done** — **93 % on the application code** (412 tests, measured 2026-09-24), 72 % once the offline evaluation scripts are included; services 95 %, scoring 100 %, safety gate 100 %, crisis patterns 100 %, retriever **76 %** (was 100 % before the pinned-chunk and embedding-mismatch paths were added; those are only partly exercised) | `pytest --cov=app` | — | — |
 | Hand-computed scoring fixtures incl. edge cases | **Done** | [tests/test_scoring_dass21.py](../tests/test_scoring_dass21.py), [test_scoring_pss10.py](../tests/test_scoring_pss10.py) | — | — |
 | API contract tests | **Done** — 14 tests | [tests/test_api.py](../tests/test_api.py) | — | — |
 | RAG test with a fixed mini-corpus | **Done** | [tests/test_rag.py](../tests/test_rag.py), [test_retriever.py](../tests/test_retriever.py) (untracked) | — | — |

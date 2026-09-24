@@ -1,15 +1,99 @@
-# Academic Stress Detection System for Vietnamese University Students
+# Academic Stress Screening for Vietnamese University Students
 
-An LLM-powered web application that estimates the academic stress level of
-university students from (a) free-text input and (b) standardized
-questionnaires (DASS-21, PSS-10), and returns an explainable assessment with
-RAG-grounded coping suggestions. The interface is English; the free-text
-analysis accepts English and Vietnamese.
+A screening and self-reflection app that estimates a student's academic stress
+from what they write and from two validated questionnaires (DASS-21, PSS-10),
+explains the result with an LLM, and offers coping advice grounded in a curated
+knowledge base. FastAPI · Streamlit · LangChain · ChromaDB · fine-tuned PhoBERT.
 
-> ⚠️ **This is a screening/self-reflection aid, NOT a diagnostic tool.** Every
-> result screen shows this disclaimer, and a deterministic crisis-detection
-> rule surfaces Vietnamese mental-health helplines instead of a normal
-> assessment when self-harm risk is indicated.
+![A walk through the app: consent, free text, questionnaires, result, grounded advice, history, deletion, and the crisis path](docs/assets/demo.gif)
+
+> ⚠️ **A screening aid, not a diagnostic tool.** Every result screen says so,
+> and a deterministic safety gate replaces the normal result with Vietnamese
+> mental-health helplines when self-harm risk is indicated.
+
+## What it does
+
+- **Measures with validated instruments first.** The headline level comes from
+  DASS-21 and PSS-10, scored by their published rules. The LLM explains and
+  advises; it never overrules a questionnaire, and when it reads the student's
+  writing differently the app shows both.
+- **Grounds every suggestion.** Advice may only restate retrieved passages;
+  citations are checked against what was actually retrieved, and with nothing
+  retrieved the app says so instead of inventing advice.
+- **Puts a deterministic gate in front of everything.** A construct-based
+  suicide-risk rule (English and Vietnamese) runs before anything is stored or
+  sent to a provider.
+
+## Results
+
+All classification figures are on **synthetic** data (466 students generated
+from 41 templates); they demonstrate the pipeline, not real-world accuracy.
+Every number below is produced by a script and collected in
+[docs/RESULTS.md](docs/RESULTS.md).
+
+| What | Result | How it was measured |
+|---|---|---|
+| Crisis rule | **F1 0.929** (precision 1.000, recall 0.867); 0 false alarms on 20 lethal-sounding idioms | 60-item bilingual set, frozen with a hash *before* the rule was written |
+| Retrieval | **MRR 0.844**, Recall@4 0.961 | 57 hand-labelled queries, in the exact form the deployed service sends |
+| Grounding | **75 %** of suggestions fully supported by the retrieved passages, 99 % at least partially; without retrieval the model declines on 39 of 40 items | LLM judge from a different model family; a second-model check agrees at κ 0.81; human rating in progress |
+| Classification | Full pipeline accuracy 0.671, **QWK 0.871, within one level on 100 % of items** — statistically indistinguishable from TF-IDF and fine-tuned PhoBERT | 70-item frozen test split, paired McNemar tests with Holm correction |
+| Engineering | 412 tests, 93 % coverage of application code, CI | GitHub Actions on every push |
+
+## What measuring it found
+
+The evaluation changed the system more than once, and some of my own published
+claims did not survive it:
+
+- **My evaluation cache had been contaminated.** 85 stub entries written by a
+  test were being served as model output — including every prediction behind a
+  headline ablation result. I quarantined them, re-ran the affected studies,
+  withdrew the conclusions they had supported, and added a guard that fails any
+  test writing to the real cache.
+- **The production retrieval query was discarding a third of its
+  effectiveness.** A paired comparison showed the original query construction
+  scoring MRR 0.509 against 0.839 for the rewrite, on the queries it affected.
+- **"The full system clearly beats zero-shot" — withdrawn.** Its lead (13 items
+  to 3) is significant on its own but not after the pre-specified correction for
+  five comparisons (p = 0.085).
+- **The LLM disagrees with the validated instrument on a third of cases, even
+  with the scores in its prompt** — direct evidence for the design decision to
+  let the questionnaire, not the model, decide the headline.
+- **The first crisis rule caught almost no indirect ideation** (recall 0.20 on
+  unseen phrasing). It was rebuilt around six clinical constructs and
+  re-measured on a set frozen beforehand.
+
+Each of these is written up, with the numbers it replaced, in
+[docs/RESULTS.md](docs/RESULTS.md).
+
+## Limitations
+
+- **Synthetic data.** 34 of 70 test items are more than 0.80 similar to a
+  training item; the classification figures measure template recognition. A
+  consented real-data study is instrumented but not yet run.
+- **The component ablation is inconclusive.** At n = 40 no component's removal
+  is statistically distinguishable; resolving the two with a consistent
+  direction would take roughly 100–150 paired items.
+- **Single annotator.** The crisis and retrieval test sets were labelled by the
+  author; the faithfulness judge awaits its human rating.
+
+## Quick start
+
+```powershell
+pip install -r requirements.txt
+copy .env.example .env         # set OPENAI_API_KEY - any OpenAI-compatible provider (Groq, Gemini, Ollama)
+python scripts/seed.py --rows 200
+
+python -m uvicorn app.api.main:app --port 8000          # terminal 1 - API, docs at /docs
+python -m streamlit run streamlit_app/Home.py           # terminal 2 - UI at http://localhost:8501
+```
+
+Or `docker compose up --build`. The full operating guide, including warm-up
+and troubleshooting, is [RUNBOOK.md](RUNBOOK.md).
+
+Python 3.11+ (developed on 3.13), about 4 GB of disk for models. The local
+PhoBERT classifier is expected at `models/phobert-stress`
+(`research/phobert_finetune.py` reproduces it); without it the app falls back to
+the lexicon, and it is only consulted for Vietnamese text in any case.
 
 ## Architecture
 
@@ -36,209 +120,90 @@ Streamlit UI (English, multipage)             FastAPI backend
 
 The pipeline for `POST /assess/full`:
 
-1. **NLP** — fine-tuned local PhoBERT stress classifier + a bilingual
-   stress-keyword lexicon; sentiment polarity is derived from these two signals
-   (no separate sentiment model, fully offline; degrades to lexicon-only if the
-   classifier is unavailable). PhoBERT is Vietnamese-only, so it is consulted
-   only for Vietnamese input; English text is scored by the lexicon alone.
-2. **Deterministic scoring** — official DASS-21 and PSS-10 scoring rules produce
-   the ground-truth label (`Low/Moderate/High/Severe`).
-3. **Crisis rule** — runs *before* any LLM call; on self-harm signals the flow
-   bypasses the LLM and returns helpline information.
-4. **RAG** — top-k retrieval from a curated knowledge base (ChromaDB,
-   multilingual sentence-transformer embeddings). Retrieval quality is measured;
-   see [docs/RESULTS.md](docs/RESULTS.md) §4b.
-5. **LLM** — a LangChain chain returns structured JSON: predicted level,
-   confidence, reasoning, 3 actionable suggestions, risk flags and citations.
-   Suggestions may not go beyond the retrieved material, citations are verified
-   against what was actually retrieved, and an empty retrieval means no advice
-   is generated at all. If the LLM fails, deterministic results are still
-   returned.
-6. **Persistence** — every artifact is stored under an anonymized UUID; no
-   personally identifying fields are ever sent to the language-model provider.
-   Crisis disclosures are never persisted.
-
-## Setup
-
-Requirements: Python 3.11+ (developed on 3.13), ~4 GB disk for models.
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env          # then set OPENAI_API_KEY (any OpenAI-compatible
-                              # provider works, see docs/RUNNING_LLM_EVAL.md)
-```
-
-Optional but recommended — the local fine-tuned PhoBERT stress classifier is
-expected at `models/phobert-stress` (see `research/phobert_finetune.py` to
-reproduce it). Without it the app degrades to lexicon-only text analysis.
-
-### Seed the knowledge base and synthetic data
-
-```bash
-python scripts/seed.py --rows 200      # ChromaDB ingestion + 200 synthetic students
-# or: make seed
-```
-
-First run downloads the multilingual embedding model (~500 MB) once.
-
-### Run
-
-```bash
-# Terminal 1 — API (docs at http://127.0.0.1:8000/docs)
-uvicorn app.api.main:app --port 8000
-
-# Terminal 2 — UI (http://localhost:8501)
-streamlit run streamlit_app/Home.py
-```
-
-Or with Docker:
-
-```bash
-docker compose up --build     # API on :8000, UI on :8501
-```
-
-### Tests
-
-```bash
-python -m pytest tests/ -q
-```
-
-The suite covers the scoring engines (official cutoff boundary tests), the
-lexicon/NLP module (models mocked), RAG chunking + retrieval (real ChromaDB on
-a temp dir), the LangChain chain (fake LLM), the crisis rules, and all API
-endpoints (TestClient with mocked NLP/RAG/LLM). No network or API key needed.
-
-### Evaluation
-
-```bash
-python -m app.eval.synthetic --rows 200   # if not already seeded
-python -m app.eval.evaluate               # accuracy, macro-F1, Cohen's kappa
-```
-
-Writes `data/eval/metrics.json` and `data/eval/confusion_matrix.png` comparing
-`llm_predicted_label` against the questionnaire-derived `ground_truth_label`.
+1. **NLP** — a fine-tuned PhoBERT stress classifier and a bilingual stress
+   lexicon. PhoBERT is Vietnamese-only, so English text is scored by the lexicon
+   alone, and the app labels which signal it used.
+2. **Scoring** — DASS-21 and PSS-10 by their published rules produce the
+   headline level (`Low / Moderate / High / Severe`).
+3. **Crisis gate** — consumes the scores and the text. Everything before it is a
+   pure function: nothing is stored and no provider is called until it clears.
+   On a match the student sees helplines instead of a result, and the
+   disclosure is never persisted.
+4. **Retrieval** — top-k passages from the knowledge base (multilingual
+   embeddings), with help-seeking passages pinned in for High or Severe results.
+5. **LLM** — structured JSON: a level, confidence, reasoning, zero to five
+   suggestions, risk flags and citations. Suggestions may not go beyond the
+   retrieved material, and citations are verified against it.
+6. **Persistence** — under an anonymous UUID; the prompt never contains
+   identifying fields.
 
 ## Reproducing the experiments
 
-All experiment artifacts land in `data/eval/`; computed tables are collected in
-[docs/RESULTS.md](docs/RESULTS.md). Numbers based on synthetic data are labeled
-as such in every output. Commands, in the order a fresh clone would run them:
+Artifacts land in `data/eval/`; the tables are collected in
+[docs/RESULTS.md](docs/RESULTS.md). LLM replies are disk-cached, so a re-run
+after the first is free and deterministic.
 
 ```bash
-# 0. One-time setup
-pip install -r requirements.txt
-cp .env.example .env               # set OPENAI_API_KEY for the LLM systems
-#    Any OpenAI-compatible provider works via OPENAI_BASE_URL (Groq,
-#    OpenRouter, Gemini, local Ollama). Step-by-step: docs/RUNNING_LLM_EVAL.md
-python scripts/seed.py --rows 200  # ChromaDB ingestion + synthetic DB rows
+python scripts/check_llm.py                       # pre-flight the provider and its daily quota
 
-python scripts/check_llm.py        # pre-flight the LLM provider before spending quota
-
-# 1. Baseline comparison (tfidf_lr, phobert_ft, llm_zeroshot, llm_full)
-#    Same frozen stratified split for every system; LLM responses are cached
-#    under data/eval/llm_cache/ so re-runs are free and deterministic.
-python -m app.eval.compare --dataset synthetic
-#    -> data/eval/comparison.csv, comparison.md, confusion_<system>.png
-#    LLM systems are skipped with an explicit note if no valid key is set.
-
-# 2. Ablation study (full / no_rag / no_questionnaire / no_emotion / text_only)
-python -m app.eval.ablation --dataset synthetic
-#    -> data/eval/ablation.csv, ablation.md, ablation.png   (requires API key)
-
-# 3. Crisis-rule evaluation (50 hand-labeled Vietnamese items; offline)
-python -m app.eval.crisis_eval
-#    -> data/eval/crisis_eval.md  (precision/recall/F1 + every FP/FN verbatim)
-
-# 4. Retrieval-quality evaluation (57 hand-labeled queries; offline)
-python -m app.eval.retrieval_eval
-#    -> data/eval/retrieval_eval.md  (Recall@k / MRR / nDCG@k, k sweep,
-#       breakdown by query shape, and every miss verbatim)
-
-# 5. Real-data study, once participants have used the app
-python scripts/export_dataset.py --split      # SQLite -> data/real/dataset.csv
-python scripts/data_quality_report.py         # flag suspect submissions
-python -m app.eval.compare --dataset real     # identical pipeline, real data
-
-# 6. Human evaluation
-python -m app.eval.export_for_rating --n 30 --raters 3   # blank rating sheets
-python -m app.eval.rating_analysis --dir data/eval/rating # after sheets return
-python -m app.eval.sus_score --csv <sus_responses.csv>    # SUS usability score
+python -m app.eval.compare --dataset synthetic    # six systems on one frozen split
+python scripts/comparison_paired.py               # paired McNemar re-analysis of that table
+python -m app.eval.ablation --dataset synthetic --limit 40   # component ablation, paired tests
+python -m app.eval.crisis_eval --testset data/eval/crisis_testset_heldout.jsonl \
+                               --out data/eval/crisis_eval_heldout.md   # the held-out crisis set
+python -m app.eval.retrieval_eval                 # retrieval quality, deployed query form first
+python -m app.eval.faithfulness_eval --limit 40   # grounding of generated advice (LLM judge)
+python scripts/phobert_checkpoint_compare.py      # the 4-class PhoBERT checkpoint vs the deployed one
+python scripts/hub_experiment.py                  # the retrieval hub experiment
 ```
 
-Determinism notes: every script takes `--seed` (default 42) where randomness
-exists; the train/test split is frozen in `data/stress_dataset_split.csv`
-(reused so PhoBERT's fine-tuning train set never leaks into test); LLM calls
-run at temperature 0 for `llm_zeroshot` and are disk-cached for all systems.
+Every script takes a seed where randomness exists; the train/test split is
+frozen in `data/stress_dataset_split.csv` and reused, so PhoBERT's training set
+never leaks into test. For a real-data study: `scripts/export_dataset.py`,
+`scripts/data_quality_report.py`, then `compare --dataset real`. Human rating:
+`app.eval.export_for_rating`, `app.eval.rating_analysis`, and for the judge,
+[docs/RATING_faithfulness.md](docs/RATING_faithfulness.md).
 
-## Report and slides
+## Safety and privacy
 
-The submitted report lives in [`report/latex/`](report/latex/) — `main.tex`
-plus `chapters/*.tex`, in the HCMIU template. Build it with pdfLaTeX:
-
-```powershell
-cd report/latex
-.\build.ps1                     # -> main.pdf, 75 pages, about 12 s
-```
-
-Every figure in it is generated rather than drawn, so a changed result cannot
-leave a stale picture behind:
-
-```bash
-python report/make_report_figures.py   # 13 charts, read from data/eval/
-python report/render_diagrams.py       # 12 Mermaid diagrams (Playwright)
-python report/capture_screenshots.py   # 5 UI screenshots (needs the app running)
-python report/build_slides.py          # the defence deck
-```
-
-The build PDF is not tracked; `docs/RESULTS.md` and `data/eval/` are the
-authoritative numbers. An earlier Markdown-sourced version of the report is in
-[`report/archive/`](report/archive/) and is **not current** — see the README
-there before reading anything in it.
+- **Non-diagnostic** wording on every result surface, API responses included.
+- **Crisis gate** before any side effect: six suicide-risk constructs in English
+  and Vietnamese with span-local guards for idioms, plus DASS-21 risk items 17
+  and 21. Helplines: Ngày Mai 096 306 1414, 111, 115.
+- **Crisis disclosures are not retained** — only the reason the gate fired is
+  logged, never the text.
+- **Consent first.** The consent screen names the language-model provider
+  (resolved from the configured endpoint), the retention period, and the right
+  to erase.
+- **Right to withdraw.** `DELETE /session/{student_id}` erases every row for an
+  anonymous code, behind a two-step control on the History page.
 
 ## Repository layout
 
 ```
 app/
-  config.py         pydantic-settings configuration (.env)
-  scoring/          DASS-21 & PSS-10 engines + unified ground-truth label
-  nlp/              emotion.py (PhoBERT stress clf), lexicon.py (VN keywords)
-  rag/              ChromaDB store, Markdown ingestion, retriever
-  llm/              chain.py (LangChain + Pydantic parser), safety.py (crisis rule)
-  api/              FastAPI app (main.py) + orchestration (services.py)
-  db/               SQLAlchemy models + session management
-  eval/             synthetic data generator + agreement metrics
-streamlit_app/      multipage Vietnamese UI (consent → input → results → history)
-data/knowledge/     Vietnamese Markdown knowledge base for RAG
-research/           pre-existing thesis research scripts (dataset generation,
-                    TF-IDF baselines, PhoBERT fine-tuning)
-tests/              pytest suite
+  api/          FastAPI app and orchestration (services.py)
+  scoring/      DASS-21 and PSS-10 engines, unified label
+  nlp/          PhoBERT classifier, bilingual lexicon, crisis patterns
+  rag/          ChromaDB store, Markdown ingestion, retriever
+  llm/          LangChain chain with a Pydantic parser; the safety gate
+  db/           SQLAlchemy models
+  eval/         every evaluation harness
+streamlit_app/  the English, multipage UI
+data/knowledge/ the English knowledge base for retrieval
+research/       dataset generator, TF-IDF baselines, PhoBERT fine-tuning
+scripts/        seeding, pre-flight checks, re-analyses
+report/latex/   the submitted report (HCMIU template) and its figure generators
+docs/           RESULTS, RISKS, AUDIT, decisions and review sheets
+tests/          pytest suite - no network or API key needed
 ```
 
-## Safety design
+Tests: `python -m pytest tests/ -q`.
 
-- **Non-diagnostic disclaimer** on every result surface (API responses carry
-  `disclaimer`; every UI page renders it).
-- **Crisis detection** is deterministic and runs before the LLM: explicit
-  self-harm phrases in text (English and Vietnamese), or DASS-21 risk items (17, 21) at
-  maximum, or Extremely Severe depression with an elevated risk item, all
-  bypass the normal output and show helplines (Ngày Mai 096 306 1414, 111, 115).
-- **Crisis disclosures are not retained.** The rule runs before any write, so a
-  self-harm disclosure is routed to helplines and never persisted. Only the
-  trigger reasons are logged, never the text.
-- **The validated instrument decides the headline.** When a DASS-21 / PSS-10
-  score exists it is what the results page reports; the LLM supplies explanation
-  and suggestions only. Disagreement between the two is shown to the student,
-  and its rate is reported by `app/eval/evaluate.py`.
-- **Right to withdraw**: `DELETE /session/{student_id}` erases every row for an
-  anonymized id, exposed as a two-step control on the History page.
-- **Consent gate** before any data entry; only anonymized UUIDs are stored. The
-  in-app consent states third-party processing (the provider is named at runtime from the configured endpoint — currently Groq), the retention period,
-  and the right to erase.
-- **Privacy**: the LLM prompt contains the free text, scores, and non-identifying
-  context only — never IDs or demographic identifiers.
+## License
 
-## License / academic context
+Code under the [MIT License](LICENSE). The DASS-21 (Lovibond & Lovibond, 1995)
+and PSS-10 (Cohen et al., 1983) are reproduced in their original English wording
+under their research-use terms; they are not covered by the MIT license.
 
-Pre-thesis project. Questionnaire instruments (DASS-21, PSS-10) are used under
-their respective research-use terms; Vietnamese DASS-21 wording follows the
-validated adaptation (Tran et al., 2013) with minor smoothing.
+Pre-thesis project, International University — VNU-HCM.
