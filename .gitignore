@@ -36,6 +36,7 @@ data/eval/*
 !data/eval/crisis_testset_en.jsonl
 !data/eval/crisis_testset_heldout.jsonl
 !data/eval/retrieval_queries.jsonl
+!data/eval/retrieval_queries_implicit.jsonl
 .pytest_cache/
 models/
 *.log
