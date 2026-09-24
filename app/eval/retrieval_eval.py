@@ -131,6 +131,24 @@ def run_queries(queries: list[Query], max_k: int) -> list[QueryOutcome]:
     return outcomes
 
 
+def run_production_queries(queries: list[Query], max_k: int) -> list[QueryOutcome]:
+    """The natural queries as the deployed service actually sends them.
+
+    `run_queries` scores the set as written: raw sentences, plus the `keywords`
+    queries, which reproduce a shape production retired on 2026-09-06. Neither is
+    what `build_rag_query()` sends. Until 2026-09-24 the report led with that
+    mixed figure (MRR 0.787) as though it described the deployed system; the
+    production form scored 0.843. This is the number the report now leads with.
+    """
+    outcomes: list[QueryOutcome] = []
+    for query in queries:
+        if query.style != "natural":
+            continue
+        docs = retrieve(as_production_query(query.query), k=max_k)
+        outcomes.append(QueryOutcome(query=query, retrieved=[d.chunk_id for d in docs]))
+    return outcomes
+
+
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -155,6 +173,13 @@ def aggregate(outcomes: list[QueryOutcome], ks: tuple[int, ...] = K_SWEEP) -> di
 def evaluate(queries: list[Query], ks: tuple[int, ...] = K_SWEEP) -> dict:
     outcomes = run_queries(queries, max_k=max(ks))
     overall = aggregate(outcomes, ks)
+    production_outcomes = run_production_queries(queries, max_k=max(ks))
+    # The sweep skips k=4, so the deployed depth is added for this aggregate.
+    production = (
+        aggregate(production_outcomes, tuple(sorted(set(ks) | {PRODUCTION_K})))
+        if production_outcomes
+        else None
+    )
 
     by_style: dict[str, dict] = {}
     for style in sorted({o.query.style for o in outcomes}):
@@ -174,6 +199,7 @@ def evaluate(queries: list[Query], ks: tuple[int, ...] = K_SWEEP) -> dict:
 
     return {
         "overall": overall,
+        "production": production,
         "by_style": by_style,
         "by_lang": by_lang,
         "outcomes": outcomes,
@@ -196,15 +222,27 @@ def format_report(results: dict) -> str:
     ks = results["ks"]
     overall = results["overall"]
 
-    lines = [
-        "# Retrieval quality evaluation",
+    lines = ["# Retrieval quality evaluation", ""]
+    production = results.get("production")
+    if production:
+        lines += [
+            f"**Deployed query form: MRR = {production['mrr']:.3f}, "
+            f"Recall@{PRODUCTION_K} = {production['recall_at'][PRODUCTION_K]:.3f}, "
+            f"{len(production['misses_at_production_k'])} of {production['n_queries']} queries "
+            f"with no relevant chunk in the top {PRODUCTION_K}.**",
+            "",
+            f"That is the {production['n_queries']} natural queries passed through "
+            "`build_rag_query()`, as the deployed service sends them, at the deployed "
+            f"depth k = {PRODUCTION_K}. It is the figure that describes the system.",
+            "",
+        ]
+    lines += [
+        f"## Query set as written ({overall['n_queries']} queries, MRR = {overall['mrr']:.3f})",
         "",
-        f"Query set: {overall['n_queries']} hand-labelled queries over the "
-        "knowledge corpus, scored against the production `retrieve()` path.",
-        "",
-        f"**MRR = {overall['mrr']:.3f}**  ·  production k = {PRODUCTION_K}",
-        "",
-        "## Overall",
+        "Raw sentences, plus the `keywords` queries, which reproduce the query shape "
+        "production retired on 2026-09-06 and are kept as a regression guard. "
+        "**This is not a measure of the deployed system** — no production query takes "
+        "either form — and the headline above should be quoted instead.",
         "",
     ]
     lines += _metric_table(overall, ks)
@@ -224,20 +262,38 @@ def format_report(results: dict) -> str:
         lines += _metric_table(stats, ks)
         lines.append("")
 
+    def _miss_lines(miss_list: list[QueryOutcome]) -> list[str]:
+        out: list[str] = []
+        if not miss_list:
+            out.append("(none)")
+        for outcome in miss_list:
+            q = outcome.query
+            out.append(f"- **#{q.id}** [{q.style}/{q.lang}] “{q.query}”")
+            out.append(f"  - expected: {', '.join(sorted(q.relevant))}")
+            out.append(
+                "  - got: "
+                + (", ".join(outcome.retrieved[:PRODUCTION_K]) if outcome.retrieved else "(nothing)")
+            )
+            if q.note:
+                out.append(f"  - note: {q.note}")
+        return out
+
+    if production:
+        prod_misses = production["misses_at_production_k"]
+        lines += [
+            f"## Deployed form: queries with no relevant chunk in the top {PRODUCTION_K} "
+            f"({len(prod_misses)})",
+            "",
+        ]
+        lines += _miss_lines(prod_misses)
+        lines.append("")
+
     misses = overall["misses_at_production_k"]
-    lines += [f"## Queries with no relevant chunk in the top {PRODUCTION_K} ({len(misses)})", ""]
-    if not misses:
-        lines.append("(none)")
-    for outcome in misses:
-        q = outcome.query
-        lines.append(f"- **#{q.id}** [{q.style}/{q.lang}] “{q.query}”")
-        lines.append(f"  - expected: {', '.join(sorted(q.relevant))}")
-        lines.append(
-            "  - got: "
-            + (", ".join(outcome.retrieved[:PRODUCTION_K]) if outcome.retrieved else "(nothing)")
-        )
-        if q.note:
-            lines.append(f"  - note: {q.note}")
+    lines += [
+        f"## As written: queries with no relevant chunk in the top {PRODUCTION_K} ({len(misses)})",
+        "",
+    ]
+    lines += _miss_lines(misses)
 
     lines += ["", "## Labelled chunks never surfaced by any query", ""]
     if results["never_surfaced"]:

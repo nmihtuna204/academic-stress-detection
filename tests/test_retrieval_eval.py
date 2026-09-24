@@ -314,6 +314,40 @@ class TestEvaluateWiring:
         # "b" was labelled relevant but never retrieved.
         assert results["never_surfaced"] == ["b"]
 
+    def test_headline_is_the_deployed_query_form(self, monkeypatch):
+        """The report once led with a figure no production query produces.
+
+        It mixed raw sentences with keyword queries in a shape retired on
+        2026-09-06 (MRR 0.787), while the form build_rag_query() sends scored
+        0.843. Here the raw sentence misses and the production form hits, so a
+        headline built from the wrong set would read 0.000.
+        """
+        from app.eval import retrieval_eval
+        from app.rag.retriever import RetrievedDoc
+
+        def doc(chunk_id):
+            return RetrievedDoc(text="t", source="s", heading="h", distance=0.1, chunk_id=chunk_id)
+
+        monkeypatch.setattr(retrieval_eval, "as_production_query", lambda text: text + " +kw")
+        monkeypatch.setattr(
+            retrieval_eval, "retrieve",
+            lambda query, k: [doc("a")] if query.endswith("+kw") else [doc("z")],
+        )
+        queries = [
+            Query(id=1, query="q1", relevant={"a"}, style="natural", lang="en"),
+            Query(id=2, query="retired shape", relevant={"a"}, style="keywords", lang="en"),
+        ]
+        results = retrieval_eval.evaluate(queries, ks=(1,))
+
+        assert results["production"]["n_queries"] == 1, "only natural queries have a production form"
+        assert results["production"]["mrr"] == pytest.approx(1.0)
+        assert results["overall"]["mrr"] == pytest.approx(0.0)
+        report = retrieval_eval.format_report(results)
+        headline = next(line for line in report.splitlines() if line.startswith("**"))
+        assert "Deployed query form: MRR = 1.000" in headline
+        assert "Recall@4 = 1.000" in headline
+        assert "not a measure of the deployed system" in report
+
     def test_report_lists_every_miss_verbatim(self, monkeypatch):
         from app.eval import retrieval_eval
 
