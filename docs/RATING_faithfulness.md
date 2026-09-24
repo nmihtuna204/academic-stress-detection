@@ -19,13 +19,31 @@ are done.
 ## The sheet
 
 `data/eval/faithfulness_rating_sheet.csv` — 30 rows. Each has a suggestion the
-system gave, and the passages it was retrieved against. Fill in `human_verdict`
-with exactly one of `supported`, `partial` or `unsupported`, and leave everything
-else as it is.
+system gave, and the passages it was retrieved against.
 
-Edit it in VS Code or any plain-text editor. If you use Excel, import it through
-**Data → From Text/CSV** with UTF-8 encoding and save it back as CSV UTF-8,
-otherwise the dashes in the passages are garbled.
+**The easy way — a local rating page (about 30–40 minutes):**
+
+```powershell
+python scripts/make_rating_page.py
+start data\eval\faithfulness_rating.html
+```
+
+One row at a time, the rubric beside it, keys **1 / 2 / 3** to rate and move on,
+**← / →** to go back and forth. Progress is kept in the browser, so you can stop
+and come back. When every row is rated, press **Download CSV**, then move the
+download over the sheet:
+
+```powershell
+Move-Item "$HOME\Downloads\faithfulness_rating_sheet.csv" data\eval\faithfulness_rating_sheet.csv -Force
+```
+
+The page is built from the blind sheet only, and refuses any file that carries a
+verdict, so it cannot show you the judge's answers.
+
+**By hand instead:** fill `human_verdict` with exactly one of `supported`,
+`partial` or `unsupported` and leave everything else as it is. Use VS Code or a
+plain-text editor; in Excel, import through **Data → From Text/CSV** as UTF-8 and
+save back as CSV UTF-8, or the dashes in the passages are garbled.
 
 The rows were drawn at random within each of the judge's verdicts (seed 7), so the
 rare verdicts are over-represented: do not expect the sheet to look like the

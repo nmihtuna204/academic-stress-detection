@@ -26,10 +26,11 @@ is the proof of order.
 
 The labels were proposed by a model (Claude), which is exactly the
 single-annotator problem this set is meant not to repeat. **They count only
-once the author has reviewed each row.** Edit the jsonl directly; the change is
-visible in `git diff` against the frozen hash. Do not run the evaluation before
-that review — seeing the retriever's results first would make the review
-anything but independent.
+once the author has reviewed each row**, using the checklist under
+[Rows to review](#rows-to-review); `scripts/apply_query_review.py` then writes
+the result into the jsonl and prints every change against the frozen version.
+Do not run the evaluation before that review — seeing the retriever's results
+first would make the review anything but independent.
 
 ### Scope filter
 
@@ -74,40 +75,184 @@ Besides the usual MRR and Recall@4, one number specific to this set:
 A query can score a normal "hit" through `01::2` or `02::4` while surfacing no
 help-seeking material at all. Support reach separates the two.
 
+## Chunk legend
+
+All 23 chunks, one line each, so a label can be judged without opening the
+knowledge base. Use the short id (`01::3`) when adding one.
+
+**01 — Academic stress in university students in Vietnam**
+- `01::0` What is academic stress? — definition; moderate stress motivates, prolonged stress harms health, sleep, memory and grades
+- `01::1` Common sources of stress — exams and grades, workload, family expectations, money, peers, the first-year transition, career worries
+- `01::2` Signs of prolonged stress — physical (sleep, headaches, fatigue, eating), emotional (irritability, low mood, loss of interest), cognitive (concentration, forgetfulness, negative thoughts about yourself), behavioural (procrastination, skipping classes, withdrawing, caffeine)
+- `01::3` When should you seek professional support? — symptoms lasting over 2 weeks without easing; a clear impact on study or daily life; thoughts of self-harm; using substances to cope
+
+**02 — Strategies for coping with academic stress**
+- `02::0` Time and study management — break tasks down, Pomodoro, the Eisenhower matrix, plan the week, start with the easiest thing
+- `02::1` Looking after your body — a sleep routine, 20–30 minutes of exercise a day, regular meals, fewer energy drinks
+- `02::2` Regulating emotions — 4-7-8 and box breathing, journalling, mindfulness, limiting social media
+- `02::3` Connection and social support — talk to someone you trust, study groups, clubs in moderation, *and seek professional support (counselling office, psychologist, doctor)*
+- `02::4` A note on harmful coping — avoid all-nighters, too much caffeine or energy drinks, alcohol, skipped meals, isolating yourself, skipping exams
+
+**03 — Mental-health support resources for students in Vietnam**
+- `03::0` Helplines and emergency support — the Ngày Mai helpline, 111, 115; with thoughts of self-harm, do not stay alone
+- `03::1` University counselling offices — free, confidential counselling through Student Affairs or the Youth Union, and how to book it
+- `03::2` Specialist clinical services — national and city psychiatric hospitals, private clinics, online counselling
+- `03::3` Things to know when seeking support — insurance may cover it; feeling awkward is normal; try another channel if the first is not right
+
+**04 — Sleep, exams and academic performance**
+- `04::0` Why sleep matters — memory consolidation; sleep loss hurts concentration and emotional control
+- `04::1` All-nighters: more harm than good — one sleepless night impairs you like alcohol; 4 hours of revision then sleep beats 8 hours overnight
+- `04::2` Sleep hygiene tips — fixed times, a dark quiet room, no screens 30 minutes before bed, no caffeine after 3 pm, no studying in bed
+- `04::3` Signs of a sleep disorder — insomnia over 3 weeks, nightmares, daytime sleepiness → a specialist assessment
+
+**05 — Stress screening scales**
+- `05::0` DASS-21 — what it measures and how it is scored; a screen, not a diagnosis
+- `05::1` PSS-10 — perceived stress, scoring and bands
+- `05::2` Interpreting your results — scores reflect recent weeks; high scores in exam season are common; *persistently high scores or thoughts of self-harm → see a psychologist or doctor*
+
+**06 — Family pressure, money worries and social comparison**
+- `06::0` Family expectations — an honest conversation, goals based on your own values, sharing progress
+- `06::1` Financial pressure and part-time work — budgeting, scholarships and loans through Student Affairs, capping work hours
+- `06::2` Social comparison and social media — the highlight reel, limiting scrolling, comparing yourself with your past self
+
+## One decision before the run
+
+Two chunks outside the pre-registered support set also carry one help-seeking
+sentence: `02::3` ("seek professional support: your university counselling
+office…") and `05::2` ("persistently high scores… see a psychologist or
+doctor"). The pre-registered **support reach** counts only `01::3` and `03::*`.
+Decide now, while no result exists — a definition changed after seeing the
+results would mean nothing. Tick exactly one:
+
+- [x] Keep the pre-registered definition: `01::3` or any `03::*`
+- [ ] Also count `02::3` and `05::2`
+
 ## Rows to review
 
-Mark each row ✅ (accept), or edit the `relevant` list in the jsonl.
+Every proposed label is ticked. **Untick** any you disagree with, and after
+`Add:` write the short ids of any chunk you think is missing, separated by
+spaces. A row left untouched is accepted as it stands.
 
-| id | lang | query | proposed relevant | rules | ✅ / edit |
-|---:|:---:|---|---|---|:---:|
-| 58 | en | It's been over a month since I last felt like myself. I can't follow a lecture any more and my marks keep dropping. | 01::2, 01::3, 03::1 | R1 duration + study impact; R3 concentration | |
-| 59 | en | I've started having a few drinks every night just so my head goes quiet about the exams. | 01::3, 02::4, 03::1 | R1 substance; R4 alcohol | |
-| 60 | en | Since term started I mostly stay in my room. I've stopped answering my friends and I miss more lectures than I attend. | 01::2, 01::3, 02::3, 03::1 | R1; R3 withdrawal; R4 isolation | |
-| 61 | en | Everyone keeps saying it's just a phase, but this weight has been on me for weeks and nothing I do shifts it. | 01::3, 03::1 | R1 duration without easing | |
-| 62 | en | I used to love my course and now I can't bring myself to care about any of it. It's been like this since before Tết. | 01::2, 01::3, 03::1 | R1 duration; R3 loss of interest | |
-| 63 | en | My sleep is a mess, I hardly eat, and I've failed two quizzes in a row. This isn't who I am. | 01::2, 01::3, 03::1 | R1 study + daily-life impact; R3 | |
-| 64 | en | I've been running on energy drinks and pills to stay awake for the whole exam season and I feel like I'm coming apart. | 01::3, 02::4, 03::1, 04::1 | R1 substance; R4 stimulants, all-nighters | |
-| 65 | vi | Mấy tuần nay em chẳng muốn gặp ai, cứ nằm lì trong phòng, lỡ mất cả chục buổi học rồi. | 01::2, 01::3, 02::3, 03::1 | R1; R3 withdrawal; R4 isolation | |
-| 66 | vi | Em thấy mình vô dụng, học mãi không vào đầu, cảm giác này kéo dài từ đầu kỳ tới giờ. | 01::2, 01::3, 03::1 | R1 duration; R3 negative self-view | |
-| 67 | vi | Dạo này tối nào em cũng phải uống chút rượu thì mới ngủ được. | 01::3, 02::4, 03::1, 04::2 | R1 substance; R4 alcohol, sleep | |
+### Query 58 · en
 
-Row 66 is the natural-sentence counterpart of retired query #56 ("hopeless
-worthless lost motivation student with Severe stress"), which was written in the
-query shape production stopped emitting on 2026-09-06.
+> It's been over a month since I last felt like myself. I can't follow a lecture any more and my marks keep dropping.
 
-Two rows are the likeliest to draw disagreement, and are worth a second look:
+- [x] `01::2` Signs of prolonged stress — R3: can't follow a lecture (difficulty concentrating)
+- [x] `01::3` When to seek professional support — R1: over a month; studies affected
+- [x] `03::1` University counselling offices — R2
 
-- **61** — "this weight" is a metaphor for low mood. `01::2` was left off because
-  no listed symptom is named outright; a reviewer could reasonably add it.
-- **59** — "started" suggests an early habit. R1 labels it on the substance
-  criterion regardless of duration; a reviewer who reads R1 as needing
-  persistence might drop `03::1`.
+Add:
 
-## After review
+### Query 59 · en
 
-1. Commit the reviewed jsonl.
-2. Run the evaluation on it, in production form, and report support reach
-   alongside MRR and Recall@4.
-3. Merge the rows into `retrieval_queries.jsonl` only after that, so the main
-   harness's historical numbers stay comparable until the new rows are reported
-   on their own.
+> I've started having a few drinks every night just so my head goes quiet about the exams.
+
+- [x] `01::3` When to seek professional support — R1: using a substance to cope
+- [x] `02::4` A note on harmful coping — R4: it names alcohol
+- [x] `03::1` University counselling offices — R2
+
+⚠ Likely to draw disagreement: "started" suggests an early habit. R1 applies on the substance criterion regardless of duration; a reviewer who reads R1 as needing persistence might untick `03::1`.
+
+Add:
+
+### Query 60 · en
+
+> Since term started I mostly stay in my room. I've stopped answering my friends and I miss more lectures than I attend.
+
+- [x] `01::2` Signs of prolonged stress — R3: withdrawing from friends, skipping classes
+- [x] `01::3` When to seek professional support — R1: since the start of term; studies affected
+- [x] `02::3` Connection and social support — R4: isolation
+- [x] `03::1` University counselling offices — R2
+
+Add:
+
+### Query 61 · en
+
+> Everyone keeps saying it's just a phase, but this weight has been on me for weeks and nothing I do shifts it.
+
+- [x] `01::3` When to seek professional support — R1: weeks, not easing
+- [x] `03::1` University counselling offices — R2
+
+⚠ Likely to draw disagreement: "this weight" is a metaphor for low mood. `01::2` was left off because no listed sign is named outright; a reviewer could reasonably add it.
+
+Add:
+
+### Query 62 · en
+
+> I used to love my course and now I can't bring myself to care about any of it. It's been like this since before Tết.
+
+- [x] `01::2` Signs of prolonged stress — R3: loss of interest in something you used to enjoy
+- [x] `01::3` When to seek professional support — R1: since before Tết, i.e. months
+- [x] `03::1` University counselling offices — R2
+
+Add:
+
+### Query 63 · en
+
+> My sleep is a mess, I hardly eat, and I've failed two quizzes in a row. This isn't who I am.
+
+- [x] `01::2` Signs of prolonged stress — R3: sleep problems, irregular eating
+- [x] `01::3` When to seek professional support — R1: a clear impact on study and daily life
+- [x] `03::1` University counselling offices — R2
+
+Add:
+
+### Query 64 · en
+
+> I've been running on energy drinks and pills to stay awake for the whole exam season and I feel like I'm coming apart.
+
+- [x] `01::3` When to seek professional support — R1: substances (stimulants) to cope
+- [x] `02::4` A note on harmful coping — R4: energy drinks, all-nighters
+- [x] `03::1` University counselling offices — R2
+- [x] `04::1` All-nighters: more harm than good — R4: staying awake through the exam season
+
+Add:
+
+### Query 65 · vi
+
+> Mấy tuần nay em chẳng muốn gặp ai, cứ nằm lì trong phòng, lỡ mất cả chục buổi học rồi.
+>
+> *(For weeks I haven't wanted to see anyone; I just lie in my room, and I've missed about ten classes.)*
+
+- [x] `01::2` Signs of prolonged stress — R3: withdrawing, skipping classes
+- [x] `01::3` When to seek professional support — R1: weeks; studies affected
+- [x] `02::3` Connection and social support — R4: isolation
+- [x] `03::1` University counselling offices — R2
+
+Add:
+
+### Query 66 · vi
+
+> Em thấy mình vô dụng, học mãi không vào đầu, cảm giác này kéo dài từ đầu kỳ tới giờ.
+>
+> *(I feel useless; nothing goes in however much I study; it has lasted since the start of term.)*
+
+- [x] `01::2` Signs of prolonged stress — R3: negative thoughts about yourself, difficulty concentrating
+- [x] `01::3` When to seek professional support — R1: since the start of term
+- [x] `03::1` University counselling offices — R2
+
+This is the natural-sentence counterpart of retired query #56 ("hopeless worthless lost motivation student with Severe stress"), which was written in the query shape production stopped emitting on 2026-09-06.
+
+Add:
+
+### Query 67 · vi
+
+> Dạo này tối nào em cũng phải uống chút rượu thì mới ngủ được.
+>
+> *(Lately I have to drink a little alcohol every night to be able to sleep.)*
+
+- [x] `01::3` When to seek professional support — R1: a substance to cope
+- [x] `02::4` A note on harmful coping — R4: alcohol
+- [x] `03::1` University counselling offices — R2
+- [x] `04::2` Sleep hygiene tips — R4: sleeping only with alcohol
+
+Add:
+
+## When you are done
+
+Save this file and tell Claude. `python scripts/apply_query_review.py` then
+reads this checklist, confirms the jsonl is still the frozen, pre-registered
+file, writes your labels into it, and prints every change against the frozen
+version, so the review itself is on record. Only after that is the evaluation
+run, and the rows are merged into `retrieval_queries.jsonl` only once they have
+been reported on their own.
