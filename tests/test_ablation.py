@@ -1,6 +1,7 @@
 """Tests for the ablation study (LLM mocked; no network)."""
 
 import pandas as pd
+import pytest
 
 from app.eval.ablation import CONFIGS, interpret, plot, run
 
@@ -28,7 +29,7 @@ class TestInterpretation:
         text = interpret(self.make_table())
         assert "RAG retrieval" in text
         assert "questionnaire" in text
-        assert "0.230" in text  # 0.78 - 0.55 delta appears
+        assert "-0.200" in text  # accuracy delta 0.80 -> 0.60, the primary metric
 
     def test_interpretation_flags_leakage_caveat(self):
         assert "leakage" in interpret(self.make_table())
@@ -93,7 +94,9 @@ class TestRunMocked:
         assert text_only_delta < 0
         assert (tmp_path / "ablation.csv").exists()
         assert (tmp_path / "ablation.png").exists()
-        assert "Interpretation" in (tmp_path / "ablation.md").read_text(encoding="utf-8")
+        md = (tmp_path / "ablation.md").read_text(encoding="utf-8")
+        assert "Interpretation" in md and "McNemar" in md
+        assert (tmp_path / "ablation_paired.csv").exists()
 
 
 class TestSubsampleTestSplit:
@@ -150,49 +153,115 @@ class TestSubsampleTestSplit:
         assert subsample_test_split(df, 999).equals(df)
 
 
-class TestNoiseAwareInterpretation:
-    """A delta smaller than sampling noise must not be given a direction.
+class TestPairedInterpretation:
+    """A direction is claimed only where the pre-specified paired test rejects.
 
-    Before this guard the generated paragraph said "removing the emotion
-    features IMPROVES macro-F1 by 0.059" at n=40, where the 95% Wilson interval
-    is +/-0.148. The number was real; the word "IMPROVES" was not supported.
+    The earlier guard compared each delta with a single-proportion "noise floor"
+    (the 95% Wilson half-width of ONE accuracy, +/-0.148 at n=40). Every
+    configuration is scored on the same items, so the right test is paired.
     """
 
-    def _table(self, full_f1: float, other_f1: float, config: str = "no_emotion"):
-        import pandas as pd
-
+    def _table(self, other_acc: float, config: str = "no_emotion"):
         return pd.DataFrame(
             [
-                {"config": "full", "accuracy": 0.5, "macro_f1": full_f1, "cohen_kappa": 0.3},
-                {"config": config, "accuracy": 0.5, "macro_f1": other_f1, "cohen_kappa": 0.3},
+                {"config": "full", "accuracy": 0.675, "macro_f1": 0.6, "cohen_kappa": 0.5},
+                {"config": config, "accuracy": other_acc, "macro_f1": 0.5, "cohen_kappa": 0.4},
             ]
         )
 
-    def test_noise_floor_shrinks_with_sample_size(self):
-        from app.eval.ablation import noise_floor
+    def _paired(self, config: str, b: int, c: int, p: float, p_holm: float):
+        return pd.DataFrame([{
+            "config": config, "reference_only_correct": b, "other_only_correct": c,
+            "mcnemar_p": p, "mcnemar_p_holm": p_holm, "significant": p_holm < 0.05,
+        }])
 
-        assert noise_floor(40) > noise_floor(70) > noise_floor(500)
-        assert noise_floor(0) == float("inf")
+    def test_without_a_paired_test_no_direction_is_claimed(self):
+        text = interpret(self._table(0.55))
+        assert "no direction is claimed" in text
+        assert "real" not in text
 
-    def test_small_delta_is_not_given_a_direction(self):
-        from app.eval.ablation import interpret
+    def test_a_non_significant_difference_is_not_given_a_direction(self):
+        # The real n=40 no_emotion result: 6 vs 1 discordant, p = 0.125.
+        text = interpret(self._table(0.55), self._paired("no_emotion", 6, 1, 0.125, 0.5))
+        assert "not distinguishable from no effect" in text
+        assert "real drop" not in text
 
-        text = interpret(self._table(0.534, 0.593), n_used=40)
-        assert "INSIDE" in text and "cannot be distinguished" in text
-        assert "IMPROVES" not in text
+    def test_a_significant_difference_reads_directionally(self):
+        text = interpret(self._table(0.30), self._paired("no_emotion", 15, 0, 0.0001, 0.0004))
+        assert "a real drop" in text
 
-    def test_large_delta_still_reads_directionally(self):
-        from app.eval.ablation import interpret
 
-        text = interpret(self._table(0.534, 0.123, config="no_questionnaire"), n_used=40)
-        assert "drops" in text
-        assert "INSIDE" not in text
+class TestPairedStatistics:
+    """Each statistic checked against a value known in advance."""
 
-    def test_without_a_sample_size_it_stays_silent_about_noise(self):
-        from app.eval.ablation import interpret
+    def test_mcnemar_uses_only_discordant_items(self):
+        import numpy as np
 
-        text = interpret(self._table(0.534, 0.593))
-        assert "sampling-noise floor" not in text
+        from app.eval.ablation import mcnemar_exact
+
+        ref = np.array([True] * 6 + [False] * 1 + [True] * 20)
+        other = np.array([False] * 6 + [True] * 1 + [True] * 20)
+        b, c, p = mcnemar_exact(ref, other)
+        assert (b, c) == (6, 1)
+        assert p == pytest.approx(0.125)  # two-sided binomial, 6 of 7
+
+    def test_mcnemar_with_no_discordance_is_p_one(self):
+        import numpy as np
+
+        from app.eval.ablation import mcnemar_exact
+
+        same = np.array([True, False, True])
+        assert mcnemar_exact(same, same) == (0, 0, 1.0)
+
+    def test_holm_adjustment(self):
+        from app.eval.ablation import holm
+
+        # sorted 0.01, 0.03, 0.04, 0.5 -> 0.04, 0.09, max(0.09, 0.08), 0.5
+        assert holm([0.01, 0.04, 0.03, 0.5]) == pytest.approx([0.04, 0.09, 0.09, 0.5])
+
+    def test_qwk_matches_sklearn(self):
+        import numpy as np
+        from sklearn.metrics import cohen_kappa_score
+
+        from app.eval.ablation import _qwk
+
+        rng = np.random.default_rng(0)
+        for _ in range(20):
+            t, p = rng.integers(0, 4, 40), rng.integers(0, 4, 40)
+            expected = cohen_kappa_score(t, p, labels=range(4), weights="quadratic")
+            assert _qwk(t, p) == pytest.approx(expected)
+
+    def test_within_one_counts_adjacent_misses_only(self):
+        from app.eval.ablation import within_one
+
+        truth = ["Low", "Low", "Low", "Low"]
+        assert within_one(truth, ["Low", "Moderate", "High", "Severe"]) == pytest.approx(0.5)
+
+    def test_unknown_labels_are_refused_not_coded(self):
+        from app.eval.ablation import ordinal_codes
+
+        with pytest.raises(ValueError, match="Extreme"):
+            ordinal_codes(["Low", "Extreme"])
+
+    def test_paired_comparison_and_power(self):
+        from app.eval.ablation import paired_comparison, power_projection
+
+        truth = ["Low", "Moderate", "High", "Severe"] * 10
+        predictions = {
+            "full": list(truth),
+            "no_rag": list(truth),                                   # identical
+            "text_only": ["Low"] * 40,                                # wrong on 30 of 40
+        }
+        table = paired_comparison(truth, predictions, resamples=200).set_index("config")
+        assert table.loc["no_rag", "mcnemar_p"] == 1.0
+        assert not table.loc["no_rag", "significant"]
+        assert table.loc["text_only", "reference_only_correct"] == 30
+        assert table.loc["text_only", "significant"]
+        assert table.loc["text_only", "delta_qwk_ci_high"] < 0
+
+        power = power_projection(truth, predictions, sizes=(40,), draws=100).set_index("config")
+        assert power.loc["no_rag", "n=40"] == 0
+        assert power.loc["text_only", "n=40"] == pytest.approx(1.0)
 
 
 class TestUnreportableResults:

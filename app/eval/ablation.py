@@ -13,9 +13,32 @@ Configurations (same frozen split and metrics as the baseline comparison):
 Usage:
     python -m app.eval.ablation --dataset synthetic
 
-Outputs (data/eval/): ablation.csv, ablation.md, ablation.png.
+Outputs (data/eval/): ablation.csv, ablation_paired.csv, ablation.md, ablation.png.
 All configurations require a valid OPENAI_API_KEY; responses are disk-cached,
 so a full re-run after the first costs nothing.
+
+Statistics - PRE-SPECIFIED from 2026-09-24 for every run from then on:
+
+- **Primary.** Each ablated configuration against `full`: the difference in
+  accuracy, tested with an exact McNemar test on the items the two classify
+  differently, Holm-corrected across the ablated configurations, alpha = 0.05.
+  A direction ("removing X lowers accuracy") is stated only when that test
+  rejects. Every configuration sees the same items, so the comparison is
+  paired; the covariance between two systems scored on the same items is what
+  a paired test uses and a per-system interval throws away.
+- **Secondary, descriptive.** The labels are ordered, so quadratic-weighted
+  kappa, with a paired bootstrap 95 % interval on its difference from `full`,
+  and the share of predictions within one level of the truth. These are not
+  tested and carry no direction on their own.
+- **Power.** The observed paired outcomes are resampled to larger n to project
+  how often the primary test would reject. A projection from a small sample,
+  and optimistic, because effects measured on few items tend to be overstated.
+
+The stratified n = 40 run of 2026-09-20 was specified against a
+single-proportion "noise floor" (the 95 % Wilson half-width of one accuracy,
+±0.148). That is not the right yardstick for a paired difference; the analysis
+above replaced it after that run's results were known, so wherever it is quoted
+for that run it is labelled post hoc.
 """
 
 from __future__ import annotations
@@ -23,10 +46,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import math
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from app.config import PROJECT_ROOT
@@ -42,31 +65,150 @@ CONFIGS: dict[str, tuple[bool, bool, bool]] = {
     "text_only": (False, False, False),
 }
 
-METRIC_COLS = ["accuracy", "macro_f1", "cohen_kappa"]
+METRIC_COLS = ["accuracy", "within_one", "macro_f1", "cohen_kappa", "qwk"]
+ALPHA = 0.05
+COMPONENT = {
+    "no_rag": "RAG retrieval",
+    "no_questionnaire": "the questionnaire scores",
+    "no_emotion": "the emotion features",
+    "text_only": "everything except the raw text",
+}
 
 
-def noise_floor(n: int, p: float = 0.5) -> float:
-    """Half-width of the 95% Wilson interval on accuracy at sample size `n`.
+def ordinal_codes(labels) -> np.ndarray:
+    """Labels as their position on the ordered scale Low < Moderate < High < Severe.
 
-    A delta smaller than this cannot be distinguished from sampling noise, and
-    reporting it directionally would claim a result the data does not support.
-    Computed at p=0.5, the widest (most conservative) case.
+    Raises on anything outside the scale rather than coding it silently.
     """
-    if n <= 0:
-        return float("inf")
-    z = 1.96
-    denom = 1 + z * z / n
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return half
+    from app.eval.baselines import STRESS_LEVELS
+
+    position = {level: i for i, level in enumerate(STRESS_LEVELS)}
+    unknown = sorted({str(x) for x in labels} - set(position))
+    if unknown:
+        raise ValueError(f"labels outside the ordered scale: {unknown}")
+    return np.array([position[x] for x in labels], dtype=int)
 
 
-def interpret(table: pd.DataFrame, n_used: int | None = None) -> str:
-    """One short computed paragraph: which components matter, per the deltas.
+def _qwk(t: np.ndarray, p: np.ndarray, k: int = 4) -> float:
+    """Quadratic-weighted kappa on integer-coded labels; nan where it is undefined.
 
-    Deltas below the sampling-noise floor are reported as indistinguishable from
-    zero rather than given a direction. Without this the paragraph would say
-    things like "removing the emotion features IMPROVES macro-F1 by 0.059" at
-    n=40, where the 95% interval is +/-0.148 - a claim the sample cannot carry.
+    Equal to sklearn's cohen_kappa_score(weights="quadratic"), written out so a
+    10,000-draw bootstrap stays fast.
+    """
+    observed = np.bincount(t * k + p, minlength=k * k).reshape(k, k).astype(float)
+    n = observed.sum()
+    weights = np.subtract.outer(np.arange(k), np.arange(k)) ** 2.0
+    expected = np.outer(observed.sum(axis=1), observed.sum(axis=0)) / n if n else observed
+    denom = (weights * expected).sum()
+    return float(1.0 - (weights * observed).sum() / denom) if denom else float("nan")
+
+
+def qwk(y_true, y_pred) -> float:
+    """Quadratic-weighted kappa: an off-by-three costs nine times an off-by-one."""
+    return _qwk(ordinal_codes(y_true), ordinal_codes(y_pred))
+
+
+def within_one(y_true, y_pred) -> float:
+    """Share of predictions at most one level from the truth."""
+    return float(np.mean(np.abs(ordinal_codes(y_pred) - ordinal_codes(y_true)) <= 1))
+
+
+def mcnemar_exact(ref_correct: np.ndarray, other_correct: np.ndarray) -> tuple[int, int, float]:
+    """Exact McNemar test on paired correctness.
+
+    Only the discordant items carry information: `b` the reference got right and
+    the other got wrong, `c` the reverse. Under no difference each discordant
+    item is a fair coin, so the p-value is a two-sided binomial test of b in b+c.
+    """
+    from scipy.stats import binomtest
+
+    b = int(np.sum(ref_correct & ~other_correct))
+    c = int(np.sum(~ref_correct & other_correct))
+    return b, c, (1.0 if b + c == 0 else float(binomtest(b, b + c, 0.5).pvalue))
+
+
+def holm(pvalues: list[float]) -> list[float]:
+    """Holm step-down adjusted p-values, controlling the family-wise error rate."""
+    m = len(pvalues)
+    adjusted = [0.0] * m
+    running = 0.0
+    for rank, i in enumerate(sorted(range(m), key=lambda j: pvalues[j])):
+        running = max(running, min(1.0, (m - rank) * pvalues[i]))
+        adjusted[i] = running
+    return adjusted
+
+
+def paired_comparison(y_true, predictions: dict[str, list[str]], reference: str = "full",
+                      resamples: int = 10_000, seed: int = 42) -> pd.DataFrame:
+    """Every configuration against the reference, on the same items.
+
+    Primary: exact McNemar on accuracy, Holm-corrected across configurations.
+    Descriptive: a paired bootstrap interval on the difference in QWK.
+    """
+    t = ordinal_codes(y_true)
+    ref = ordinal_codes(predictions[reference])
+    draws = np.random.default_rng(seed).integers(0, len(t), size=(resamples, len(t)))
+    rows = []
+    for config, labels in predictions.items():
+        if config == reference:
+            continue
+        p = ordinal_codes(labels)
+        b, c, pvalue = mcnemar_exact(ref == t, p == t)
+        boot = np.array([_qwk(t[i], p[i]) - _qwk(t[i], ref[i]) for i in draws])
+        low, high = np.nanpercentile(boot, [2.5, 97.5])
+        rows.append({
+            "config": config,
+            "n": len(t),
+            "reference_only_correct": b,
+            "other_only_correct": c,
+            "delta_accuracy": round(float(np.mean(p == t) - np.mean(ref == t)), 4),
+            "mcnemar_p": round(pvalue, 4),
+            "delta_qwk": round(_qwk(t, p) - _qwk(t, ref), 4),
+            "delta_qwk_ci_low": round(float(low), 4),
+            "delta_qwk_ci_high": round(float(high), 4),
+        })
+    table = pd.DataFrame(rows)
+    if not table.empty:
+        table["mcnemar_p_holm"] = [round(x, 4) for x in holm(table["mcnemar_p"].tolist())]
+        table["significant"] = table["mcnemar_p_holm"] < ALPHA
+    return table
+
+
+def power_projection(y_true, predictions: dict[str, list[str]], reference: str = "full",
+                     sizes: tuple[int, ...] = (40, 70, 100, 150, 200), draws: int = 2000,
+                     seed: int = 7) -> pd.DataFrame:
+    """Share of resamples in which the McNemar test rejects, at larger n.
+
+    Resamples the observed item pairs, so it assumes the discordance seen at the
+    current n is the true one. Per comparison and unadjusted: under the Holm
+    correction the primary analysis applies, the n needed is larger still.
+    """
+    t = ordinal_codes(y_true)
+    ref_correct = ordinal_codes(predictions[reference]) == t
+    rng = np.random.default_rng(seed)
+    rows = []
+    for config, labels in predictions.items():
+        if config == reference:
+            continue
+        other_correct = ordinal_codes(labels) == t
+        row = {"config": config}
+        for n in sizes:
+            hits = 0
+            for _ in range(draws):
+                i = rng.integers(0, len(t), n)
+                hits += mcnemar_exact(ref_correct[i], other_correct[i])[2] < ALPHA
+            row[f"n={n}"] = round(hits / draws, 3)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def interpret(table: pd.DataFrame, paired: pd.DataFrame | None = None) -> str:
+    """One computed paragraph: what removing each component did, and whether it is real.
+
+    A direction is stated only where the pre-specified primary test - exact
+    McNemar, Holm-corrected - rejects at alpha = 0.05. Without per-item paired
+    results no direction is claimed at all: a difference between two summary
+    numbers says nothing about whether it would survive another sample.
     """
     if table.empty or "full" not in set(table["config"]):
         return (
@@ -74,41 +216,35 @@ def interpret(table: pd.DataFrame, n_used: int | None = None) -> str:
             "(a valid OPENAI_API_KEY is required)."
         )
     full_row = table[table["config"] == "full"].iloc[0]
-    floor = noise_floor(n_used) if n_used else None
+    tests = {} if paired is None or paired.empty else paired.set_index("config").to_dict("index")
     parts: list[str] = []
     for _, row in table[table["config"] != "full"].iterrows():
-        delta = row["macro_f1"] - full_row["macro_f1"]
-        component = {
-            "no_rag": "RAG retrieval",
-            "no_questionnaire": "the questionnaire scores",
-            "no_emotion": "the emotion features",
-            "text_only": "everything except the raw text",
-        }.get(row["config"], row["config"])
-        if floor is not None and abs(delta) < floor:
-            parts.append(
-                f"removing {component} moves macro-F1 by {delta:+.3f} "
-                f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f}), which is INSIDE the "
-                f"±{floor:.3f} sampling-noise floor at n={n_used} and therefore cannot be "
-                "distinguished from no effect"
-            )
-        else:
-            direction = "drops" if delta < 0 else ("is unchanged" if delta == 0 else "IMPROVES")
-            parts.append(
-                f"removing {component} {direction} macro-F1 by {abs(delta):.3f} "
-                f"({full_row['macro_f1']:.3f} → {row['macro_f1']:.3f})"
-            )
-    return (
-        "Interpretation (computed from the table above): " + "; ".join(parts) + ". "
-        "Components whose removal barely moves macro-F1 contribute little measurable "
-        "signal on this dataset; large drops mark load-bearing components. Note that "
-        "the questionnaire scores define the ground-truth label, so the "
-        "no_questionnaire delta measures label leakage as much as feature value."
-        + (
-            f" Sampling-noise floor at n={n_used} is ±{floor:.3f} on accuracy (95% Wilson, "
-            "worst case p=0.5); only deltas larger than that are reported directionally."
-            if floor is not None
-            else ""
+        config = row["config"]
+        delta = row["accuracy"] - full_row["accuracy"]
+        text = (
+            f"removing {COMPONENT.get(config, config)} moves accuracy by {delta:+.3f} "
+            f"({full_row['accuracy']:.3f} → {row['accuracy']:.3f})"
         )
+        test = tests.get(config)
+        if test is None:
+            text += ", with no paired test available, so no direction is claimed"
+        else:
+            b, c = int(test["reference_only_correct"]), int(test["other_only_correct"])
+            text += (
+                f"; full alone right on {b} item{'s' if b != 1 else ''}, {config} alone on {c}, "
+                f"exact McNemar p = {test['mcnemar_p']:.3f}, "
+                f"Holm-adjusted {test['mcnemar_p_holm']:.3f}"
+            )
+            if test["significant"]:
+                text += f" — a real {'drop' if delta < 0 else 'gain'} at α = {ALPHA}"
+            else:
+                text += f" — not distinguishable from no effect at α = {ALPHA}"
+        parts.append(text)
+    return (
+        "Interpretation (computed; primary test pre-specified in the module docstring): "
+        + "; ".join(parts)
+        + ". Note that the questionnaire scores define the ground-truth label, so the "
+        "no_questionnaire comparison measures label leakage as much as feature value."
     )
 
 
@@ -210,6 +346,10 @@ def run(
 
     rows = []
     unreported: list[tuple[str, str]] = []
+    # Per-item labels, kept for the paired analysis: summary numbers alone cannot
+    # say whether a difference between two configurations would survive.
+    predictions: dict[str, list[str]] = {}
+    y_true: list[str] | None = None
     for config in configs:
         use_rag, use_questionnaire, use_emotion = CONFIGS[config]
         print(f"\n=== Ablation config: {config} ===")
@@ -230,7 +370,14 @@ def run(
 
         row, _metrics = metrics_row(result)
         row["config"] = config
+        row["within_one"] = round(within_one(result.y_true, result.y_pred), 4)
+        row["qwk"] = round(qwk(result.y_true, result.y_pred), 4)
         rows.append(row)
+        if y_true is None:
+            y_true = list(result.y_true)
+        elif list(result.y_true) != y_true:
+            raise RuntimeError(f"{config} was scored on different items; the comparison is not paired")
+        predictions[config] = list(result.y_pred)
         print(f"{config}: acc={row['accuracy']:.3f} macro_f1={row['macro_f1']:.3f}")
 
     table = pd.DataFrame(rows)
@@ -268,15 +415,47 @@ def run(
         for metric in METRIC_COLS:
             table[f"delta_{metric}"] = (table[metric] - full_row[metric]).round(4)
 
-    display_cols = ["config"] + METRIC_COLS + [f"delta_{m}" for m in METRIC_COLS if f"delta_{m}" in table]
+    display_cols = ["config"] + METRIC_COLS
     table = table[display_cols + [c for c in table.columns if c not in display_cols]]
     table.to_csv(out / "ablation.csv", index=False)
+
+    paired = None
+    sections = ""
+    if "full" in predictions and len(predictions) > 1:
+        paired = paired_comparison(y_true, predictions)
+        paired.to_csv(out / "ablation_paired.csv", index=False)
+        power = power_projection(y_true, predictions)
+        shown = paired.assign(
+            delta_qwk_95ci=[f"[{lo:+.3f}, {hi:+.3f}]"
+                            for lo, hi in zip(paired["delta_qwk_ci_low"], paired["delta_qwk_ci_high"], strict=True)]
+        )[["config", "reference_only_correct", "other_only_correct", "delta_accuracy",
+           "mcnemar_p", "mcnemar_p_holm", "significant", "delta_qwk", "delta_qwk_95ci"]]
+        sections = (
+            "\n## Paired comparison against `full`\n\n"
+            f"Same {len(y_true)} items for every configuration. `reference_only_correct` = items "
+            "`full` classified correctly and the configuration did not; `other_only_correct` = the "
+            "reverse. Only those discordant items carry information about a difference. "
+            f"**Primary:** exact McNemar, Holm-corrected, α = {ALPHA}. "
+            "**Descriptive only:** ΔQWK with a paired bootstrap 95 % interval (10,000 resamples).\n\n"
+            + shown.to_markdown(index=False)
+            + "\n\n## Projected power of the primary test\n\n"
+            "Share of resamples of the observed item pairs in which McNemar rejects at α = "
+            f"{ALPHA}, per comparison and before the Holm correction. It assumes the discordance "
+            "seen here is the true one, and effects measured on few items tend to be overstated, "
+            "so read it as an upper bound on what a larger sample would show.\n\n"
+            + power.to_markdown(index=False)
+            + "\n"
+        )
 
     markdown = (
         banner
         + table[display_cols].to_markdown(index=False)
-        + "\n\n"
-        + interpret(table, n_used=n_used)
+        + "\n\n`within_one` = share of predictions at most one level from the truth; "
+        "`qwk` = quadratic-weighted kappa, which weights a miss by its distance on the "
+        "ordered scale.\n"
+        + sections
+        + "\n"
+        + interpret(table, paired)
         + "\n"
         + _not_reported_section()
     )
