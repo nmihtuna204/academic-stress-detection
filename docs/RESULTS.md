@@ -321,10 +321,11 @@ chunks, but fills 35 % of top-4 slots and 38 % of the *irrelevant* ones, while
 
 Ingest prepends the document title to every chunk, and the coping file's title,
 *"Strategies for coping with academic stress"*, is close to a paraphrase of the
-whole query distribution. That was tested directly rather than argued: the corpus
-was rebuilt in memory with and without the title (`data/chroma` untouched), and
-the with-title build reproduced the production MRR to six decimal places before
-anything was compared.
+whole query distribution. That was tested directly rather than argued
+(`python scripts/hub_experiment.py`): the corpus was rebuilt in memory with and
+without the title (`data/chroma` untouched), and the with-title build reproduced
+the production MRR to six decimal places before anything was compared — the
+script refuses to report otherwise.
 
 | | with title (deployed) | title removed |
 |---|---:|---:|
