@@ -69,58 +69,129 @@ assumed, and the numbers belong to the model that produced them.
 > full system does not beat zero-shot" - is reversed below. `llm_zeroshot` and
 > the offline systems were unaffected.
 
-- **The full proposed system beats zero-shot clearly.** `llm_full` reaches
-  macro-F1 **0.649** against zero-shot's 0.524 (kappa 0.576 vs 0.389), with
-  `unusable=0` on all 70 items.
-- **It does not beat the classical baseline.** TF-IDF + LR's 0.682 is marginally
-  ahead; at n = 70 the ±0.117 accuracy noise floor makes the two
-  indistinguishable. On template-generated text a bag of n-grams is very good at
-  recognising 41 recurring templates, which is precisely the criticism §5.3 makes
-  of the dataset.
-- **`llm_full` receives the scores that define the label**, so part of its
-  advantage over zero-shot is leakage by construction. §3 measures how much.
+**Paired re-analysis, 2026-09-24** (`python scripts/comparison_paired.py`; plan
+fixed in the script before running; post hoc relative to this table). All six
+systems are scored on the same 70 items, so each comparison is paired. The
+script reads the published predictions back — `llm_full` under its pre-pinning
+cache keys, with a stub client that fails on any cache miss — and reproduces all
+six rows exactly before testing anything.
+
+| `llm_full` against | `llm_full` alone correct | other alone correct | McNemar p | Holm p (×5) | ΔQWK (other − full), 95 % CI |
+|---|---:|---:|---:|---:|---|
+| llm_zeroshot | 13 | 3 | 0.021 | **0.085** | −0.075 [−0.133, −0.031] |
+| tfidf_lr | 9 | 10 | 1.000 | 1.000 | −0.031 [−0.093, +0.021] |
+| tfidf_svm | 9 | 8 | 1.000 | 1.000 | −0.045 [−0.109, +0.007] |
+| phobert_ft | 13 | 12 | 1.000 | 1.000 | −0.073 [−0.131, −0.012] |
+| majority | 30 | 6 | 0.0001 | 0.0005 | −0.871 [−0.914, −0.816] |
+
+- **The full system leads zero-shot, but the lead is not established.**
+  `llm_full` reaches macro-F1 **0.649** against zero-shot's 0.524 (kappa 0.576
+  vs 0.389), `unusable=0` on all 70 items, and is right alone on 13 items to
+  zero-shot's 3. As a single comparison that is significant (McNemar p = 0.021);
+  under the Holm correction across the five comparisons, which was the
+  pre-specified analysis, it is not (p = 0.085). QWK favours `llm_full`
+  descriptively. This section previously called the lead "clear"; that
+  overstated it, and the word is withdrawn.
+- **It is indistinguishable from the classical baseline** — and from PhoBERT and
+  the SVM. Against TF-IDF + LR the disagreements split 9 to 10. (This section
+  previously reached the same conclusion with a single-proportion "noise floor"
+  of ±0.117; the conclusion stands, the paired test is the right way to reach
+  it.) On template-generated text a bag of n-grams is very good at recognising 41
+  recurring templates, which is precisely the criticism §5.3 makes of the
+  dataset.
+- **`llm_full` receives the scores that define the label**, so leakage was
+  possible by construction. The ablation (§3; 40-item subsample, pinned pipeline)
+  finds it does not happen: removing the scores leaves accuracy unchanged. So
+  leakage is not what separates `llm_full` from zero-shot.
 - **Its weak class is High (F1 0.345),** the class the questionnaire rule places
   between two neighbours.
 
-## 3. Ablation study — complete, re-run 2026-09-20
+## 3. Ablation study — complete, re-run 2026-09-20; paired analysis 2026-09-24
 
 Regenerate: `python -m app.eval.ablation --dataset synthetic --limit 40`
-(artifacts: `data/eval/ablation.csv`, `ablation.md`, `ablation.png`)
+(artifacts: `data/eval/ablation.csv`, `ablation_paired.csv`, `ablation.md`,
+`ablation.png`). Once the cache is warm a re-run makes no API calls; the
+2026-09-24 regeneration left the cache at 495 entries before and after.
 
 Stratified 40/70-item subsample, seed 42, identical across configurations. All
-five configurations now have 40/40 real model replies: the completing run made
-78 live calls with **zero rate-limit refusals and zero parse failures**.
+five configurations have 40/40 real model replies: the completing run made 78
+live calls with **zero rate-limit refusals and zero parse failures**.
 
-| config | accuracy | macro-F1 | kappa | Δ macro-F1 |
-|---|---:|---:|---:|---:|
-| full | 0.675 | 0.6399 | 0.5847 | — |
-| no_rag | 0.675 | 0.6262 | 0.5860 | −0.014 |
-| no_questionnaire | 0.675 | 0.5467 | 0.5390 | −0.093 |
-| no_emotion | 0.550 | 0.5364 | 0.4231 | −0.104 |
-| text_only | 0.525 | 0.4923 | 0.3537 | −0.148 |
+| config | accuracy | within ±1 level | macro-F1 | kappa | QWK |
+|---|---:|---:|---:|---:|---:|
+| full | 0.675 | 1.000 | 0.6399 | 0.5847 | 0.874 |
+| no_rag | 0.675 | 1.000 | 0.6262 | 0.5860 | 0.874 |
+| no_questionnaire | 0.675 | 1.000 | 0.5467 | 0.5390 | 0.804 |
+| no_emotion | 0.550 | 1.000 | 0.5364 | 0.4231 | 0.822 |
+| text_only | 0.525 | 1.000 | 0.4923 | 0.3537 | 0.768 |
 
-**The sampling-noise floor at n = 40 is ±0.148** on accuracy (95 % Wilson, worst
-case p = 0.5). The harness computes it and refuses to give a direction to any
-delta inside it.
+**How the comparisons are tested, and why that changed.** The run was specified
+against a "noise floor" of ±0.148: the 95 % Wilson half-width of *one* accuracy
+at n = 40. That is not the right yardstick for these comparisons. Every
+configuration is scored on the same 40 items, so each comparison is paired, and
+the information about a difference lies in the items the two configurations
+classify differently. The harness now uses the textbook paired test — **exact
+McNemar on accuracy, Holm-corrected across the four comparisons, α = 0.05** —
+pre-specified in its docstring for every future run. For *this* run it was
+adopted after the results were known, so it is **post hoc** here, and it was
+fixed in writing before any paired number was computed.
 
-- **No component's removal produces a delta distinguishable from sampling
-  noise.** That includes `text_only`, which strips every component and still
-  lands at −0.1476, marginally inside the floor. The honest reading is that **at
-  n = 40 this ablation establishes nothing about any component**, and it should
-  not be cited as though it did.
-- **The ordering is nevertheless monotone and in the expected direction**:
-  0.640 > 0.626 > 0.547 > 0.536 > 0.492. Removing more components never once
-  improves the score. That is consistent with each component contributing, but
-  consistency is not evidence at this sample size.
-- **Underpowered by design of the data, not of the harness.** Resolving a 0.05
-  effect needs n ≈ 600; the entire test split is 70 items. No amount of further
-  running fixes this — only a larger labelled set would.
-- **The earlier "questionnaire removal collapses macro-F1 by 0.411" is
-  withdrawn.** That run's `no_questionnaire` predictions were 40/40 test stubs
-  (see the §2 correction), so it measured the constant-Moderate floor. Its
-  replacement, −0.093, is inside the noise floor. Note that the questionnaire
-  scores define the ground-truth label, so any delta here measures label leakage
-  as much as feature value.
+| removed | full alone correct | ablated alone correct | Δ accuracy | McNemar p | Holm p | ΔQWK, paired bootstrap 95 % CI |
+|---|---:|---:|---:|---:|---:|---|
+| RAG | 1 | 1 | 0.000 | 1.000 | 1.000 | +0.001 [−0.021, +0.023] |
+| questionnaire | 7 | 7 | 0.000 | 1.000 | 1.000 | −0.070 [−0.150, +0.013] |
+| emotion features | 6 | 1 | −0.125 | 0.125 | 0.500 | −0.052 [−0.109, −0.007] |
+| everything but text | 11 | 5 | −0.150 | 0.210 | 0.630 | −0.106 [−0.204, −0.029] |
+
+- **The primary result is still null.** No removal produces a difference in
+  accuracy that the paired test distinguishes from chance. The better test did
+  not rescue the ablation, and it should not be cited as though it had shown a
+  component to matter.
+- **But the null now says two different things.** For RAG and the
+  questionnaire, the disagreements cancel exactly (1 against 1, 7 against 7):
+  that is an effect on accuracy close to zero, and no larger sample would make
+  it significant. For the emotion features and for stripping everything, the
+  disagreements run one way (6 against 1, 11 against 5): a consistent direction
+  that 40 items are too few to establish.
+- **How many items would settle it.** Resampling the observed pairs, the
+  McNemar test would reject for `no_emotion` in 66 % of samples at n = 70, 85 %
+  at n = 100 and 96 % at n = 150; for `text_only`, 44 %, 61 % and 81 %. That is
+  per comparison and before the Holm correction, and projections from a small
+  sample are optimistic — read them as upper bounds. The earlier statement here
+  that "n ≈ 600" would be needed described a 0.05 effect, not the effects actually
+  observed; for those, 100–150 paired items is the order of magnitude. The whole
+  test split is 70.
+- **Descriptively, QWK moves where accuracy does not.** The ΔQWK intervals for
+  `no_emotion` and `text_only` exclude zero. These were designated descriptive
+  before the analysis, are uncorrected, and are 2 of 20 intervals examined, so
+  they are suggestive and nothing more — but they are a reason to pre-specify
+  QWK as the primary metric for the thesis-phase study.
+
+**Every error, in every configuration, is exactly one level off.** Mean absolute
+error in levels equals 1 − accuracy in all five, which is only possible if no
+prediction is ever more than one level from the truth (the `within ±1 level`
+column). The full pipeline is exactly right on 67.5 % of items and adjacent on
+the rest, QWK 0.874. Exact-match accuracy makes it look worse than it behaves.
+
+**The LLM does not reproduce the instrument's label, even with the instrument's
+results in front of it.** In `full`, the prompt carries the scored DASS-21 and
+PSS-10 results — though not the rule that combines them into the label — and
+the model still assigns a different level from the instrument on 32.5 % of items.
+Removing those results does not lower accuracy at all (0.675 either way).
+Two consequences:
+
+- The caveat that the questionnaire defines the label, so `no_questionnaire`
+  might "measure label leakage", is correct in principle but did not happen: the
+  model is not exploiting the leak.
+- It is direct evidence for a design decision made earlier on other grounds. The
+  application takes its headline level from the validated instrument and uses the
+  LLM for explanation and grounded advice only; a model that disagrees with the
+  instrument a third of the time, even when shown its scores, should not be the
+  source of the headline.
+
+**The earlier "questionnaire removal collapses macro-F1 by 0.411" is
+withdrawn.** That run's `no_questionnaire` predictions were 40/40 test stubs (see
+the §2 correction), so it measured the constant-Moderate floor.
 
 **Why `full`, `no_questionnaire` and `no_emotion` differ from the 2026-09-19
 run.** Support-passage pinning (§4b) entered the cache key after that run, and
@@ -134,18 +205,22 @@ four decimal places** — an unintended control that confirms the mechanism.
 **A safety intervention with a measurable cost.** Pinning was added so that rule
 6 (encourage professional support) has material to work from in severe cases;
 before it, support-resource passages were retrieved for 0 of 70 test items. It
-moved `full` from macro-F1 0.673 to 0.640. The change is inside the noise floor
-and so not established, but it is in the direction of a real trade-off and is
-reported rather than omitted.
+moved `full` from macro-F1 0.673 to 0.640. That is one descriptive difference
+between two runs, untested and not claimed as established, but it is in the
+direction of a real trade-off and is reported rather than omitted.
 
-**Residual caveat.** `full_cache_key` carries a `query_shape` field that was not
-bumped when the lexicon-ordering defect was fixed, so up to 3 of 40 items may
-serve replies generated from the pre-fix top-4 (`faithfulness_eval.md` carries
-the sensitivity analysis that excludes them; the result does not change). The
-exposure is ±0.075 on accuracy, below the ±0.148 floor. Re-running the three
-retrieval-using configurations under a bumped key would cost roughly 216 K
-tokens — over a day's allowance — to correct an error smaller than the noise
-floor, so it was not done.
+**Residual caveat — checked, and narrower than first stated.** `full_cache_key`
+carries a `query_shape` field that was not bumped when the lexicon-ordering
+defect was fixed, and 3 of the 40 items (positions 1, 20, 27) retrieve a
+different top 4 under some keyword orders. Cache timestamps settle which replies
+could be stale: for those items, `full` and `no_emotion` were regenerated on
+2026-09-20 between 21:18 and 21:57, after the fix, and `no_rag` and `text_only`
+do not retrieve at all. **Only `no_questionnaire`'s three replies** (2026-09-19,
+19:16–19:22) may predate it. Flipping all three in the least favourable
+direction moves that comparison from 7 against 7 to at best 7 against 4, McNemar
+p = 0.549: no conclusion above can change. So no re-run was needed — the earlier
+plan to bump the key and regenerate 120 replies (~216 K tokens) would have spent
+more than a day's allowance on something that cannot move the result.
 
 **Schema defect found by this run, fixed.** With no retrieved material the model
 follows prompt rule 4 and returns `"suggestions": []`, stating in its reasoning
