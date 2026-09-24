@@ -138,6 +138,8 @@ Each entry gives the question the panel will actually ask, the **best answer the
 
 **Partially defensible.** The structural explanation is strong and already documented in [DECISIONS.md](../DECISIONS.md). The missing pieces — majority-class baseline in the 4-class harness, SVM, few-shot LLM, ≥3 seeds with mean ± std, bootstrap CIs, McNemar — are all standard and all absent.
 
+> **Answered 2026-09-24: the difference is not real.** On the same 70 test items TF-IDF LR is right alone on 10 and the deployed 3-class PhoBERT on 8 — exact McNemar p = 0.81; accuracies 0.686 and 0.657. The macro-F1 gap is the structural Severe zero described above. Most of the missing pieces now exist: a majority baseline and an SVM in the comparison, PhoBERT trained over three seeds (4-class, unsegmented: macro-F1 0.614 ± 0.003), paired McNemar tests with Holm correction and bootstrap intervals throughout ([RESULTS.md §2, §2b, §3](RESULTS.md)). The 4-class model is not better than the deployed one either (9 vs 10, p = 1.00), which is why it is not deployed. Still absent: a few-shot LLM baseline.
+
 ---
 
 ## R10 — Results cannot be reproduced end to end

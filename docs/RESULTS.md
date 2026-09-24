@@ -106,6 +106,68 @@ six rows exactly before testing anything.
 - **Its weak class is High (F1 0.345),** the class the questionnaire rule places
   between two neighbours.
 
+## 2b. PhoBERT fine-tuning — multi-seed, and a 4-class checkpoint that is not deployed
+
+Train: `python research/phobert_finetune.py --labels 4 --segment none --seeds 13 42 7 --save-best-to models/phobert-stress-4c`
+(record: `data/eval/phobert_finetune.md`, `data/eval/phobert_runs/*.json`).
+Verify and compare: `python scripts/phobert_checkpoint_compare.py`.
+
+The `phobert_ft` row in §2 is the checkpoint the application loads,
+`models/phobert-stress`: a **3-class** model (Low / Moderate / High), trained
+once, on one seed. It cannot output Severe, so its Severe F1 of 0.000 is a
+property of its label space, not of its training — and that zero is most of
+the gap between its macro-F1 and everyone else's.
+
+**Multi-seed study.** The same frozen split, 4 classes, inverse-frequency class
+weights computed on train only, test scored once per seed and never used for
+selection:
+
+| segmentation | seeds | test accuracy | test macro-F1 | test kappa |
+|---|---:|---:|---:|---:|
+| none | 13, 42, 7 | 0.643 ± 0.000 | 0.614 ± 0.003 | 0.526 ± 0.008 |
+| VnCoreNLP | 13, 42, 7 | 0.610 ± 0.036 | 0.577 ± 0.032 | 0.483 ± 0.056 |
+
+Unsegmented input does better here, against the PhoBERT paper's recommendation
+to word-segment — worth knowing before citing it.
+
+**The checkpoint.** `models/phobert-stress-4c` is seed 7, the best on
+*validation* (macro-F1 0.661). On 2026-09-24 its saved weights were re-run on
+validation and test and reproduced the training record exactly (0.7143 / 0.6613
+and 0.6429 / 0.6128). It is not in git (540 MB); the command above regenerates it.
+
+**Is it better than the deployed model?** Paired on the same 70 test items; plan
+fixed in the script before running; one pre-specified primary comparison:
+
+| | accuracy | macro-F1 | QWK | within ±1 level | F1 Severe |
+|---|---:|---:|---:|---:|---:|
+| 4-class checkpoint | 0.643 | 0.613 | 0.830 | 0.986 | 0.621 |
+| 3-class, deployed | 0.657 | 0.533 | 0.798 | 1.000 | 0.000 |
+| `llm_full` | 0.671 | 0.649 | 0.871 | 1.000 | 0.514 |
+| `tfidf_lr` | 0.686 | 0.682 | 0.840 | 0.986 | 0.667 |
+
+- **No.** On 19 items one is right where the other is wrong, and they split 9
+  to 10 (exact McNemar p = 1.00); ΔQWK −0.033 [−0.088, +0.029]. The macro-F1 gain, 0.533 → 0.613, is
+  the Severe class becoming predictable at all, not better classification.
+- **Against `llm_full` and TF-IDF it is indistinguishable** (5 vs 7 and 4 vs 7,
+  Holm p = 1.00 for both).
+- **So the question RISKS R9 asks — is TF-IDF's 0.682 against PhoBERT's 0.533
+  real? — has an answer: no.** TF-IDF is right alone on 10 items, the 3-class
+  model on 8, McNemar p = 0.81. The macro-F1 gap is the Severe zero.
+- **Correction.** Commit `9445a95` attributed the Severe improvement across seeds
+  to class weights. It comes from training in the 4-class label space; the
+  deployed model could never have predicted Severe.
+
+**Why it is not deployed.** There is no measured gain to deploy. And every
+published LLM result — the `llm_full` comparison, the ablation, faithfulness —
+was produced with the 3-class model's reading in its prompt, while the LLM cache
+key covers the text but not the classifier. Swapping the checkpoint without
+changing the key would serve replies generated from the old model's reading as
+though they came from the new one: the same silent staleness as the
+contamination in §2. Doing it properly means a key change and about two days of
+provider quota to regenerate those results, which is not worth spending on a
+change with no measured benefit. The case to revisit it is real data with Severe
+cases, where a model that can say "Severe" might matter.
+
 ## 3. Ablation study — complete, re-run 2026-09-20; paired analysis 2026-09-24
 
 Regenerate: `python -m app.eval.ablation --dataset synthetic --limit 40`
