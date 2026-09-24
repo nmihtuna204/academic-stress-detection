@@ -193,3 +193,96 @@ class TestRatingSheet:
         blind["human_verdict"] = blind["row_id"].map(truth)  # a rater who agrees exactly
         blind.to_csv(sheet, index=False)
         assert "raw 100.0%" in fe.agreement(sheet, key)
+
+
+class TestPassageRecovery:
+    """Judgments written before run() stored passages must still yield a rating sheet.
+
+    The published judgments file predates the `passages` column, which made
+    `--export-rating` fail with a KeyError on real data while the fixtures above,
+    which always carry the column, stayed green.
+    """
+
+    def _docs(self, tag):
+        return [RetrievedDoc(text=f"{tag} passage", source="s.md", heading="h",
+                             distance=0.1, chunk_id=f"s.md::{tag}")]
+
+    def _setup(self, tmp_path, judged_against):
+        """One judged item; the cache holds the verdict under `judged_against`'s key."""
+        import pandas as pd
+
+        from app.eval import baselines
+
+        suggestions = ["Sleep more.", "Rest."]
+        candidates = {0: {"with_pinning": self._docs("pinned"), "ranked_only": self._docs("ranked")}}
+        cache = tmp_path / "cache"
+        docs = candidates[0][judged_against]
+        baselines.cache_put(cache, fe.judge_cache_key(docs, suggestions, fe.DEFAULT_JUDGE_MODEL),
+                            {"verdicts": [], "raw": ""})
+        detail = pd.DataFrame(
+            [{"item": 0, "arm": "full", "index": i, "suggestion": s, "verdict": "supported"}
+             for i, s in enumerate(suggestions, start=1)]
+        )
+        return detail, candidates, cache
+
+    @pytest.mark.parametrize("judged_against", ["with_pinning", "ranked_only"])
+    def test_the_cache_identifies_which_passages_were_judged(self, tmp_path, judged_against):
+        detail, candidates, cache = self._setup(tmp_path, judged_against)
+        passages, provenance = fe.recover_judged_passages(detail, candidates=candidates, cache_dir=cache)
+        assert provenance[(0, "full")] == judged_against
+        assert passages[(0, "full")] == fe.format_passages(candidates[0][judged_against])
+
+    def test_an_unreproducible_item_raises_instead_of_guessing(self, tmp_path):
+        detail, candidates, cache = self._setup(tmp_path, "ranked_only")
+        detail.loc[0, "suggestion"] = "Something the judge never saw."
+        with pytest.raises(RuntimeError, match=r"\(0, 'full'\)"):
+            fe.recover_judged_passages(detail, candidates=candidates, cache_dir=cache)
+
+    def test_export_recovers_a_missing_passages_column(self, tmp_path, monkeypatch):
+        import pandas as pd
+
+        detail, candidates, cache = self._setup(tmp_path, "ranked_only")
+        path = tmp_path / "judgments.csv"
+        detail.to_csv(path, index=False)
+        monkeypatch.setattr("app.eval.baselines.DEFAULT_CACHE_DIR", cache)
+        sheet, key = tmp_path / "sheet.csv", tmp_path / "key.csv"
+
+        n = fe.export_rating_sheet(2, judgments_csv=path, sheet=sheet, key=key, candidates=candidates)
+
+        blind = pd.read_csv(sheet)
+        assert n == 2
+        assert blind["passages"].str.contains("ranked passage").all()
+        assert "verdict" not in blind.columns and "passage_set" not in blind.columns
+        assert set(pd.read_csv(key)["passage_set"]) == {"ranked_only"}
+
+
+class TestAvoidSeenRows:
+    """A second sheet must not reuse rows the rater has already seen discussed."""
+
+    def _judgments(self, tmp_path):
+        import pandas as pd
+
+        verdicts = ["supported"] * 10 + ["partial"] * 6 + ["unsupported"] * 2
+        rows = [{"item": i, "arm": "full", "index": 1, "suggestion": f"s{i}", "verdict": v,
+                 "passages": f"[p{i}] text"} for i, v in enumerate(verdicts)]
+        path = tmp_path / "judgments.csv"
+        pd.DataFrame(rows).to_csv(path, index=False)
+        return path
+
+    def test_unseen_rows_first_and_rare_strata_kept(self, tmp_path):
+        import pandas as pd
+
+        judgments = self._judgments(tmp_path)
+        first_key = tmp_path / "k1.csv"
+        fe.export_rating_sheet(6, judgments_csv=judgments, sheet=tmp_path / "s1.csv", key=first_key)
+        second_key = tmp_path / "k2.csv"
+        fe.export_rating_sheet(6, seed=7, judgments_csv=judgments, sheet=tmp_path / "s2.csv",
+                               key=second_key, avoid_key=first_key)
+
+        first, second = pd.read_csv(first_key), pd.read_csv(second_key)
+        overlap = set(first["item"]) & set(second["item"])
+        # Only 2 'unsupported' rows exist, so they may repeat - and must be flagged when they do.
+        assert all(second.set_index("item").loc[i, "verdict"] == "unsupported" for i in overlap)
+        assert second[second["item"].isin(overlap)]["seen_before"].all()
+        assert not second[~second["item"].isin(overlap)]["seen_before"].any()
+        assert set(second["verdict"]) == {"supported", "partial", "unsupported"}

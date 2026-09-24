@@ -238,22 +238,33 @@ def _judge_llm(model: str):
     )
 
 
-async def judge_one(
-    llm, semaphore: asyncio.Semaphore, docs, suggestions: list[str], model: str, cache_dir: Path
-) -> list[dict] | None:
-    """Judge one item's suggestions. Cache-first; None on an unusable reply."""
-    from app.eval.baselines import _cache_key, cache_get, cache_put
+def judge_cache_key(docs, suggestions: list[str], model: str) -> str:
+    """Cache key for one judge call.
 
-    settings = get_settings()
-    key = _cache_key(
+    Shared by judge_one, which stores under it, and recover_judged_passages,
+    which looks up under it, so the two cannot drift apart. It hashes the
+    passages together with the suggestions, which is what makes recovery exact.
+    """
+    from app.eval.baselines import _cache_key
+
+    return _cache_key(
         {
             "system": "faithfulness_judge:v1",
             "model": model,
-            "endpoint": settings.openai_base_url,
+            "endpoint": get_settings().openai_base_url,
             "passages": [[d.chunk_id, d.text] for d in docs],
             "suggestions": suggestions,
         }
     )
+
+
+async def judge_one(
+    llm, semaphore: asyncio.Semaphore, docs, suggestions: list[str], model: str, cache_dir: Path
+) -> list[dict] | None:
+    """Judge one item's suggestions. Cache-first; None on an unusable reply."""
+    from app.eval.baselines import cache_get, cache_put
+
+    key = judge_cache_key(docs, suggestions, model)
     cached = cache_get(cache_dir, key)
     if cached is not None:
         return cached["verdicts"]
@@ -543,8 +554,85 @@ RATING_SHEET = OUT_DIR / "faithfulness_rating_sheet.csv"
 RATING_KEY = OUT_DIR / "faithfulness_rating_key.csv"
 
 
+def _item_candidates(limit: int | None) -> dict[int, dict[str, list]]:
+    """Per test item, the passage lists a past run could have judged against.
+
+    run() has changed since some judgments were written: support pinning arrived
+    later, so an item may have been judged against its ranked passages alone.
+    Both lists are offered and the judge cache decides which one it was.
+    """
+    from app.api.services import retrieve_for_assessment
+    from app.eval.ablation import subsample_test_split
+    from app.eval.baselines import full_cache_key
+    from app.eval.datasets import load_eval_dataset
+    from app.nlp.emotion import analyze
+
+    df = load_eval_dataset("synthetic", out_dir=OUT_DIR)
+    if limit is not None:
+        df = subsample_test_split(df, limit)
+    test = df[df["split"] == "test"]
+    candidates: dict[int, dict[str, list]] = {}
+    for pos, (_, row) in enumerate(test.iterrows()):
+        text = str(row["text"])
+        _, dass, pss = full_cache_key(row, True, True, True)
+        docs = retrieve_for_assessment(text, analyze(text), None, dass, pss)
+        ranked = [d for d in docs if not d.pinned]
+        # Offer the pinned list only where it differs, so a match labelled
+        # "with_pinning" always means pinned passages were in front of the judge.
+        candidates[pos] = {"ranked_only": ranked}
+        if len(ranked) != len(docs):
+            candidates[pos]["with_pinning"] = docs
+    return candidates
+
+
+def recover_judged_passages(
+    detail: pd.DataFrame,
+    candidates: dict[int, dict[str, list]] | None = None,
+    cache_dir: Path | None = None,
+    judge_model: str = DEFAULT_JUDGE_MODEL,
+    limit: int | None = 40,
+) -> tuple[dict[tuple[int, str], str], dict[tuple[int, str], str]]:
+    """Recover the exact passages the judge saw, per (item, arm).
+
+    Judgment files written before run() stored a `passages` column cannot feed a
+    rating sheet, and rebuilding the passages with today's retrieval would show
+    the rater something the judge never saw. The judge cache key hashes the
+    passages together with the suggestions, so a candidate list whose key is in
+    the cache is byte-identical to the judge's input. Nothing is guessed: any
+    (item, arm) that no candidate reproduces raises, naming it.
+
+    Returns the formatted passages and, for each, which candidate matched.
+    """
+    from app.eval.baselines import DEFAULT_CACHE_DIR, cache_get
+
+    cache = cache_dir or DEFAULT_CACHE_DIR
+    if candidates is None:
+        candidates = _item_candidates(limit)
+    passages: dict[tuple[int, str], str] = {}
+    provenance: dict[tuple[int, str], str] = {}
+    unrecovered: list[tuple[int, str]] = []
+    for (item, arm), rows in detail.groupby(["item", "arm"]):
+        k = (int(item), str(arm))
+        suggestions = rows.sort_values("index")["suggestion"].astype(str).tolist()
+        for name, docs in candidates.get(k[0], {}).items():
+            if cache_get(cache, judge_cache_key(docs, suggestions, judge_model)) is not None:
+                passages[k] = format_passages(docs)
+                provenance[k] = name
+                break
+        else:
+            unrecovered.append(k)
+    if unrecovered:
+        raise RuntimeError(
+            f"Could not reproduce the judge's input for {len(unrecovered)} (item, arm) pairs: "
+            f"{unrecovered}. Refusing to build a rating sheet from passages the judge may not have seen."
+        )
+    return passages, provenance
+
+
 def export_rating_sheet(n: int = 30, seed: int = 42, judgments_csv: Path | None = None,
-                        sheet: Path = RATING_SHEET, key: Path = RATING_KEY) -> int:
+                        sheet: Path = RATING_SHEET, key: Path = RATING_KEY,
+                        candidates: dict[int, dict[str, list]] | None = None,
+                        avoid_key: Path | None = None) -> int:
     """Write a BLIND sheet of n judged suggestions for a human rater, plus a separate key.
 
     The sheet shows the suggestion and the passages it was judged against, never
@@ -553,44 +641,96 @@ def export_rating_sheet(n: int = 30, seed: int = 42, judgments_csv: Path | None 
     verdicts are the ones whose reliability matters most; that makes raw
     agreement on the sheet unrepresentative of the full set, which is why kappa
     is the figure to report.
+
+    A judgments file without a `passages` column (written by an older run())
+    has them recovered from the judge cache first; see recover_judged_passages.
+
+    `avoid_key` names an earlier sheet's key whose rows the rater may already
+    have seen discussed. Each verdict stratum is filled from unseen rows first
+    and falls back to seen ones only when it has too few, so a rare verdict is
+    never dropped; any seen row that is used is marked `seen_before` in the key.
     """
     detail = pd.read_csv(judgments_csv or OUT_DIR / "faithfulness_judgments.csv", encoding="utf-8")
+    if "passages" not in detail.columns:
+        passages, provenance = recover_judged_passages(detail, candidates=candidates)
+        pairs = list(zip(detail["item"].astype(int), detail["arm"].astype(str), strict=True))
+        detail["passages"] = [passages[p] for p in pairs]
+        detail["passage_set"] = [provenance[p] for p in pairs]
+    detail["seen_before"] = False
+    if avoid_key is not None:
+        seen = pd.read_csv(avoid_key, encoding="utf-8")
+        seen_ids = set(zip(seen["item"].astype(int), seen["arm"].astype(str), seen["index"].astype(int)))
+        detail["seen_before"] = [
+            (int(i), str(a), int(x)) in seen_ids
+            for i, a, x in zip(detail["item"], detail["arm"], detail["index"], strict=True)
+        ]
+
+    def _draw(pool: pd.DataFrame, k: int) -> pd.DataFrame:
+        """k rows, unseen first; seen rows only to make up a shortfall."""
+        unseen, seen_rows = pool[~pool["seen_before"]], pool[pool["seen_before"]]
+        take = unseen.sample(n=min(len(unseen), k), random_state=seed)
+        if len(take) < k and not seen_rows.empty:
+            take = pd.concat([take, seen_rows.sample(n=min(len(seen_rows), k - len(take)), random_state=seed)])
+        return take
+
     groups = [g for _, g in detail.groupby("verdict")]
     per_group = max(1, n // max(1, len(groups)))
-    picked = pd.concat([g.sample(n=min(len(g), per_group), random_state=seed) for g in groups])
+    picked = pd.concat([_draw(g, per_group) for g in groups])
     rest = detail.drop(picked.index)
     if len(picked) < n and not rest.empty:
-        picked = pd.concat([picked, rest.sample(n=min(len(rest), n - len(picked)), random_state=seed)])
+        picked = pd.concat([picked, _draw(rest, n - len(picked))])
     picked = picked.sample(frac=1, random_state=seed).reset_index(drop=True)
     picked.insert(0, "row_id", range(1, len(picked) + 1))
     blind = picked[["row_id", "suggestion", "passages"]].assign(
         human_verdict="", note="supported | partial | unsupported"
     )
     blind.to_csv(sheet, index=False, encoding="utf-8")
-    picked[["row_id", "item", "arm", "index", "verdict"]].to_csv(key, index=False, encoding="utf-8")
+    key_cols = ["row_id", "item", "arm", "index", "verdict", "seen_before"]
+    if "passage_set" in picked.columns:
+        key_cols.append("passage_set")
+    picked[key_cols].to_csv(key, index=False, encoding="utf-8")
     return len(picked)
 
 
-def agreement(csv_path: Path, key_path: Path | None = None) -> str:
-    """Judge-human agreement on the rows a human has rated.
+SECOND_RATER_CSV = OUT_DIR / "faithfulness_second_rater.csv"
+SECOND_RATER_KEY = OUT_DIR / "faithfulness_second_rater_key.csv"
+
+
+def agreement(csv_path: Path, key_path: Path | None = None, column: str = "human_verdict",
+              rater: str = "human", resamples: int = 10_000) -> str:
+    """Agreement between the judge and a rater, on the rows the rater has rated.
 
     With `key_path`, `csv_path` is a blind rating sheet and the judge's verdicts
-    come from the key; without it, one file carries both columns.
+    come from the key; without it, one file carries both columns. `column` names
+    the rater's verdicts and `rater` how the result is labelled: the second-model
+    check uses its own column precisely so that it can never be read as human.
+
+    Kappa comes with a percentile bootstrap interval, because at n = 30 the
+    interval is the honest part of the number.
     """
+    import numpy as np
     from sklearn.metrics import cohen_kappa_score
 
     detail = pd.read_csv(csv_path, encoding="utf-8").fillna("")
     if key_path is not None:
         detail = detail.merge(pd.read_csv(key_path, encoding="utf-8"), on="row_id", how="inner")
-    rated = detail[detail["human_verdict"].str.strip().str.lower().isin(VERDICTS)]
+    rated = detail[detail[column].astype(str).str.strip().str.lower().isin(VERDICTS)]
     if rated.empty:
-        return f"No rows have a human_verdict yet; fill some in {csv_path.name} first."
-    human = rated["human_verdict"].str.strip().str.lower()
-    kappa = cohen_kappa_score(rated["verdict"], human, labels=list(VERDICTS))
-    exact = (rated["verdict"] == human).mean()
+        return f"No rows have a {column} yet; fill some in {csv_path.name} first."
+    judge = rated["verdict"].to_numpy()
+    other = rated[column].astype(str).str.strip().str.lower().to_numpy()
+    kappa = cohen_kappa_score(judge, other, labels=list(VERDICTS))
+    exact = (judge == other).mean()
+    rng = np.random.default_rng(42)
+    boot = []
+    for _ in range(resamples):
+        i = rng.integers(0, len(judge), len(judge))
+        if len(set(judge[i]) | set(other[i])) > 1:  # kappa is undefined on one class
+            boot.append(cohen_kappa_score(judge[i], other[i], labels=list(VERDICTS)))
+    lo, hi = np.percentile(boot, [2.5, 97.5]) if boot else (float("nan"), float("nan"))
     return (
-        f"Judge-human agreement on {len(rated)} suggestions: raw {exact:.1%}, "
-        f"Cohen's kappa {kappa:.3f}."
+        f"Judge-{rater} agreement on {len(rated)} suggestions: raw {exact:.1%}, "
+        f"Cohen's kappa {kappa:.3f} (bootstrap 95% CI [{lo:.2f}, {hi:.2f}])."
     )
 
 
@@ -601,16 +741,27 @@ def main() -> None:
     parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     parser.add_argument("--agreement", action="store_true",
                         help="Report judge-human agreement from the rated sheet instead of judging.")
+    parser.add_argument("--agreement-second-rater", action="store_true",
+                        help="Report judge agreement with the second MODEL rater (not a human).")
     parser.add_argument("--export-rating", type=int, metavar="N", default=None,
                         help="Write a blind rating sheet of N judged suggestions, and its key.")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Sampling seed for --export-rating.")
+    parser.add_argument("--avoid-key", type=Path, default=None,
+                        help="Key of an earlier sheet whose rows the rater may have seen; "
+                             "--export-rating draws unseen rows first.")
     args = parser.parse_args()
 
     if args.export_rating:
-        n = export_rating_sheet(args.export_rating)
+        n = export_rating_sheet(args.export_rating, seed=args.seed, avoid_key=args.avoid_key)
         print(f"Wrote {n} rows to {RATING_SHEET} (blind) and the key to {RATING_KEY}.")
         return
     if args.agreement:
         print(agreement(RATING_SHEET, RATING_KEY))
+        return
+    if args.agreement_second_rater:
+        print(agreement(SECOND_RATER_CSV, SECOND_RATER_KEY, column="second_rater_verdict",
+                        rater="second-model"))
         return
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     logging.basicConfig(level=logging.WARNING)
