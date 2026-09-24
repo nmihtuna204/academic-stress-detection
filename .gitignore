@@ -37,6 +37,13 @@ data/eval/*
 !data/eval/crisis_testset_heldout.jsonl
 !data/eval/retrieval_queries.jsonl
 !data/eval/retrieval_queries_implicit.jsonl
+# Hand-made ratings are source data, not derived: the human validation sheet
+# (commit it once rated) and the second-model rating behind RESULTS.md §4b.
+!data/eval/faithfulness_rating_sheet.csv
+!data/eval/faithfulness_rating_key.csv
+!data/eval/faithfulness_second_rater.csv
+!data/eval/faithfulness_second_rater_sheet.csv
+!data/eval/faithfulness_second_rater_key.csv
 .pytest_cache/
 models/
 *.log

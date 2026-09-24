@@ -239,8 +239,24 @@ Regenerate: `python -m app.eval.retrieval_eval`
 (artifact: `data/eval/retrieval_eval.md`)
 
 Query set: 57 hand-labelled queries committed at `data/eval/retrieval_queries.jsonl`,
-each mapped to the chunk ids that genuinely answer it. Scored against the
-production `retrieve()` path over the 23-chunk corpus. Binary relevance.
+each mapped to the chunk ids that genuinely answer it, over the 23-chunk corpus.
+Binary relevance.
+
+**Deployed query form: MRR = 0.844, Recall@4 = 0.961; 2 of 51 queries have no
+relevant chunk in the top 4.** That is the 51 natural queries passed through
+`build_rag_query()`, exactly as the deployed service sends them, at the deployed
+depth k = 4. It is the figure that describes the system.
+
+> **Correction, 2026-09-24.** Until this date the section led with **MRR 0.787**,
+> and so did the report. That figure describes no query production sends: it
+> scored the 51 natural queries as *raw* sentences (production appends lexicon
+> keywords) together with 6 `keywords` queries that deliberately reproduce the
+> query shape **retired on 2026-09-06**, kept only as a regression guard. It
+> understated the deployed system. The harness now leads with the deployed form,
+> and labels the set-as-written table below as what it is.
+
+The query set as written (57 queries, MRR 0.787 — not a measure of the deployed
+system):
 
 | k | Recall@k | Precision@k | nDCG@k |
 |---:|---:|---:|---:|
@@ -248,8 +264,6 @@ production `retrieve()` path over the 23-chunk corpus. Binary relevance.
 | 3 | 0.838 | 0.298 | 0.776 |
 | 5 | 0.903 | 0.200 | 0.807 |
 | 8 | 0.965 | 0.136 | 0.829 |
-
-**MRR = 0.787.** Production retrieves at k = 4. These are the queries as written; the paired comparison below is what speaks to deployed behaviour.
 
 **The finding that matters is the cost of the query construction, and it has now been
 fixed.** Measured as a paired comparison: the same 51 natural queries and the same
@@ -274,13 +288,67 @@ running all six candidate shapes through this harness, not by intuition.
 The harness reproduces the before/after on every run, so the change is verifiable
 and a regression would be visible rather than silent.
 
-Language holds up: Vietnamese queries score MRR 0.800 against English 0.786,
-though n = 5 makes that weak evidence rather than a result.
+Language holds up in the query set as written: Vietnamese queries score MRR 0.800
+against English 0.786, though n = 5 makes that weak evidence rather than a result.
 
-Six queries retrieved nothing relevant in the top 4. One is safety-relevant:
-`"hopeless worthless lost motivation student with Severe stress"` failed to
-surface either the help-seeking section or the counselling-service section. Every
-miss is listed verbatim in the artifact.
+**Misses, and a withdrawn safety concern.** In deployed form, 2 of 51 queries
+retrieve nothing relevant in the top 4 (#4, #8; both listed verbatim in the
+artifact). This section previously reported six, one of them safety-relevant:
+`"hopeless worthless lost motivation student with Severe stress"` missing the
+help-seeking material. **That concern is withdrawn** — it is one of the
+retired-shape queries, and no production query takes that form. In deployed form,
+**9 of 9** natural queries whose labels include a support-resource chunk retrieve
+one in the top 4.
+
+**The gap that is real.** All nine of those queries are *explicit* help-seeking
+("free mental health hotline", "does my university offer counselling"). None
+tests a student who describes distress *without* asking for help, which is the
+case that matters for safety. Pinning covers severe questionnaire results; the
+retriever's own behaviour on such text is **unmeasured**. Ten implicit-distress
+queries (7 EN, 3 VI) were written, scope-checked against the crisis rule (all
+ten below the gate, so production retrieves for them) and frozen before being run
+on anything — see [`docs/REVIEW_implicit_retrieval_queries.md`](REVIEW_implicit_retrieval_queries.md).
+Their labels were proposed by a model and count only once the author has reviewed
+them; **they have deliberately not been run.**
+
+**Retrieval is pulled toward the coping file, and the cause is identified.**
+`02_coping_strategies.md` is 22 % of the corpus and 25 % of labelled-relevant
+chunks, but fills 35 % of top-4 slots and 38 % of the *irrelevant* ones, while
+`01_academic_stress.md` (17 % of the corpus) gets 9 %. One chunk,
+`02_coping_strategies.md::4` ("A note on harmful coping", 53 words), is in the top
+4 for 21 of 51 queries and relevant to 2. Both deployed-form misses expected an
+`01_academic_stress` chunk and received coping chunks in 3 and 4 of their 4 slots.
+
+Ingest prepends the document title to every chunk, and the coping file's title,
+*"Strategies for coping with academic stress"*, is close to a paraphrase of the
+whole query distribution. That was tested directly rather than argued: the corpus
+was rebuilt in memory with and without the title (`data/chroma` untouched), and
+the with-title build reproduced the production MRR to six decimal places before
+anything was compared.
+
+| | with title (deployed) | title removed |
+|---|---:|---:|
+| coping share of top-4 slots | 35 % | **24 %** |
+| k-occurrence skewness (hubness) | 1.18 | **0.40** |
+| `02_coping::4` in top 4, of 51 | 21 | 18 |
+| MRR, 51 natural queries | 0.844 | 0.804 |
+| deployed-form misses | #4, #8 | #12, #13, #14 |
+| questionnaire branch: actionable share | 69 % | **41 %** |
+| questionnaire branch: matched subscale | 100 % | **78 %** |
+
+- **The title is the main cause of the source-level pull** — removing it brings
+  the coping share down to roughly its corpus share, and hubness falls sharply.
+- **It does not explain the single hub**: `::4` stays on top without it. Its
+  content, a list of generic behaviours (all-nighters, caffeine, skipped meals,
+  isolation), is central on its own.
+- **Removing the title is not a fix, and was not adopted.** On text queries it
+  moves the bias rather than removing it — #4 and #8 recover, but #12–#14, all
+  coping questions, are now pulled toward `01_academic_stress`; the MRR change,
+  −0.039, is not distinguishable from zero (paired bootstrap 95 % CI [−0.126,
+  +0.042]). On the questionnaire branch it is a clear regression, and that
+  measurement covers all 27 DASS profiles exhaustively, so it is not a sampling
+  question: the query there asks for coping strategies, and the title is what
+  lets it find them.
 
 **Caveat:** corpus, queries and labels all originate within this project, single
 annotator, so there is no inter-annotator agreement.
@@ -313,10 +381,66 @@ the control: its suggestions were written with no reference material.
   depended on keyword order before the fix below, so the generator most likely
   saw that passage and the judge did not. Excluding those three items, 100 % of
   112 suggestions are supported or partial.
-- **Caveats.** The judge is not yet validated against a human rater:
-  `faithfulness_judgments.csv` has an empty `human_verdict` column, and
-  `--agreement` reports judge-human kappa once a sample is filled in. Until then
-  the rates are the judge's opinion. Synthetic inputs, n = 40.
+- **Every unsupported suggestion is help-seeking or connection advice.** Besides
+  that one, the control's single suggestion was "reach out to your university's
+  counselling service", written with no material at all — prompt rule 6
+  (encourage professional support) overriding rule 4 once in 40. These are
+  exactly the passages that went unretrieved, which is the gap support pinning
+  was later added to close.
+- **These rates describe the pipeline *before* support pinning.** On
+  2026-09-24 the passages behind every judgment were recovered from the judge
+  cache (below), and all 41 judged item-arms match the ranked-only passage
+  list — none included a pinned passage. The generator's suggestions predate
+  pinning too. **The deployed pipeline's faithfulness is unmeasured**, and
+  whether pinning closes the gap above is a hypothesis, not a result.
+
+**Judge validation — second rater, human rating pending (2026-09-24).**
+
+`--export-rating` had never worked on the real judgments: it selected a
+`passages` column that the published `faithfulness_judgments.csv`, written by an
+older revision of `run()`, does not have. The fixtures always carried the
+column, so the tests stayed green while the one route to human validation was
+broken. Rebuilding the passages with today's retrieval would have shown a rater
+something the judge never saw, so they are recovered instead from the judge
+cache: its key hashes the passages together with the suggestions, so a candidate
+passage list whose key is present is byte-identical to the judge's input. All
+122 suggestions were recovered this way; any that could not be now raises rather
+than being guessed.
+
+As a check on how much the rates depend on the choice of judge, a blind 30-row
+sheet (stratified by the judge's verdict so the rare verdicts are represented;
+seed 42) was rated independently by a second model — Claude, a third model
+family — using the judge's own rubric, with its verdicts written and hashed
+before the key was opened. Reproduce with
+`python -m app.eval.faithfulness_eval --agreement-second-rater`
+(`faithfulness_second_rater.csv` against `faithfulness_second_rater_key.csv`):
+
+| | |
+|---|---|
+| raw agreement | 27 / 30 (90 %) |
+| Cohen's κ, three classes | **0.808**, bootstrap 95 % CI [0.56, 1.00] |
+| κ on "unsupported" vs the rest | 1.000 |
+
+All three disagreements run the same way: the judge said `partial` where the
+second rater said `supported` — on a rationale clause, on examples given for a
+supported trigger, and on one substituted list item. The judge is the stricter
+of the two, so 75 % "supported" is not inflated by its leniency; and the two
+raters agree exactly on what is unsupported.
+
+The **human sheet is a separate draw** (`faithfulness_rating_sheet.csv`, seed 7),
+because the second model's verdicts on the seed-42 sheet were discussed in the
+working session and would anchor a rater who had seen them. It draws unseen rows
+first; the only two it shares with the earlier sheet are the only two
+`unsupported` rows in the whole set, which any sheet covering that verdict must
+include, and the key marks them `seen_before`. Instructions, including the
+verbatim rubric: [`docs/RATING_faithfulness.md`](RATING_faithfulness.md).
+
+**What this does not establish:** human validity. It is agreement between two
+models, which can share blind spots, on a sample stratified toward disagreement,
+with a wide interval. It shows the published rates are robust to *which model*
+judges; whether either model judges as a person would is what the human sheet is
+for, and until it is filled in the rates remain a model's opinion. Synthetic
+inputs, n = 40.
 
 **Retrieval was non-deterministic across processes; found by this analysis and
 fixed.** `ALL_KEYWORDS` was sorted by length only, from a set, so equal-length

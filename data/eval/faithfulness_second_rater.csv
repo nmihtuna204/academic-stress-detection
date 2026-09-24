@@ -1,0 +1,31 @@
+row_id,second_rater_verdict,second_rater,reason
+1,supported,claude-opus-5-5 (a model - NOT a human rater),"exercise 20-30 min, walking/cycling/gym, cortisol all in 02::1; 'improve mood' is a rationale, not a listed detail type"
+2,supported,claude-opus-5-5 (a model - NOT a human rater),near-verbatim 02::0 'Plan your week'
+3,supported,claude-opus-5-5 (a model - NOT a human rater),near-verbatim 02::1
+4,supported,claude-opus-5-5 (a model - NOT a human rater),"Pomodoro 25/5, 4 cycles, 15-30 in 02::0"
+5,partial,claude-opus-5-5 (a model - NOT a human rater),'30-60 minute blocks using the Pomodoro technique' - Pomodoro is 25 min in 02::0; 'study sessions' for 'classes'
+6,partial,claude-opus-5-5 (a model - NOT a human rater),'10-15 minutes' - 02::0 gives 15; Eisenhower matrix supported
+7,supported,claude-opus-5-5 (a model - NOT a human rater),verbatim 02::0
+8,supported,claude-opus-5-5 (a model - NOT a human rater),"all from 02::0, and says 'or' rather than conflating the two techniques"
+9,supported,claude-opus-5-5 (a model - NOT a human rater),verbatim 02::1
+10,partial,claude-opus-5-5 (a model - NOT a human rater),'study blocks of about 4 hours with regular breaks' - no retrieved passage mentions regular breaks
+11,supported,claude-opus-5-5 (a model - NOT a human rater),all specifics in 02::1; 'reverse the spikes' is a rationale clause
+12,supported,claude-opus-5-5 (a model - NOT a human rater),"30-60 steps and Pomodoro both in 02::0, combined with 'and', not conflated"
+13,partial,claude-opus-5-5 (a model - NOT a human rater),'5-10 minutes journalling each evening before sleep' - 5-10 min belongs to mindfulness in 02::2; evening/before-sleep timing absent
+14,supported,claude-opus-5-5 (a model - NOT a human rater),verbatim 02::1
+15,supported,claude-opus-5-5 (a model - NOT a human rater),02::1 incl. memory and stress-response rationale
+16,supported,claude-opus-5-5 (a model - NOT a human rater),verbatim 06::1
+17,partial,claude-opus-5-5 (a model - NOT a human rater),"'before study sessions' and 'a few minutes' - 02::2 says before an exam / when keyed up, repeat 4 times"
+18,partial,claude-opus-5-5 (a model - NOT a human rater),'on three weekdays' - 02::1 says 20-30 min a day
+19,partial,claude-opus-5-5 (a model - NOT a human rater),'at least three times this week' - 02::1 says daily; 'moderate' absent
+20,supported,claude-opus-5-5 (a model - NOT a human rater),"4-7-8, 4 repeats in 02::2; quiz/presentation given as examples of the supported 'keyed up' trigger"
+21,unsupported,claude-opus-5-5 (a model - NOT a human rater),university counselling appears in no retrieved passage (02::3 and 03::1 not retrieved); prompt rule 6 is the likely source
+22,supported,claude-opus-5-5 (a model - NOT a human rater),02::1 and 04::2
+23,supported,claude-opus-5-5 (a model - NOT a human rater),04::1 (4h then sleep beats a night of revision) and 02::4
+24,supported,claude-opus-5-5 (a model - NOT a human rater),02::1; 'any activity you enjoy' generalises rather than adding a specific
+25,unsupported,claude-opus-5-5 (a model - NOT a human rater),"BORDERLINE. Friend/study group is in 02::3, not retrieved; nearest is 02::4's prohibition on isolating, which recommends no action"
+26,partial,claude-opus-5-5 (a model - NOT a human rater),05::2 says rebalance study and rest; 'short rest or relaxation breaks' is an added specific
+27,supported,claude-opus-5-5 (a model - NOT a human rater),verbatim 02::1
+28,supported,claude-opus-5-5 (a model - NOT a human rater),"04::1, memory and reasoning included"
+29,supported,claude-opus-5-5 (a model - NOT a human rater),02::2; 'before you feel keyed up' vs 'when' is a rephrasing
+30,supported,claude-opus-5-5 (a model - NOT a human rater),02::0; 'study sessions' in place of 'exams' is a mild paraphrase of the same planning action
